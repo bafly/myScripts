@@ -1,0 +1,2 @@
+# myScripts
+my maya scripts
