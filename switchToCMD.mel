@@ -1,0 +1,39 @@
+global proc switchToCMD(string $cmdType){
+ 
+    global string $gCommandLine;
+    global string $gCommandLineSourceButton;
+ 
+    $cmdType = `tolower $cmdType`;
+    $cmdLineAnnot = $cmdType == "mel" ? uiRes("m_initCommandLine.kCmdLineAnnotMEL") : 
+                                        uiRes("m_initCommandLine.kCmdLineAnnotPython");
+ 
+    // swtich cmd line
+    commandLine -e -sourceType $cmdType -inputAnnotation $cmdLineAnnot $gCommandLine;
+ 
+    // change ui
+    $lbl = `labelFromCommandSourceType $cmdType`;
+    iconTextButton -e -label $lbl -width 46 $gCommandLineSourceButton;
+    
+    // upd optionVar
+    optionVar -sv commandLineSourceType $cmdType;
+
+    // ready to go
+    // setFocus $gCommandLine;
+}
+
+global proc doFocusOnShell(){
+    
+    global string $gCommandLine;
+
+    setFocus $gCommandLine;
+}
+
+global proc doToggleCMDShell(){
+
+    global string $gCommandLine;
+    global string $gCommandLineSourceButton;
+    
+    $curSrc = `commandLine -q -st $gCommandLine`;
+    $nextSrc = $curSrc == "mel" ? "python" : "mel";
+    switchToCMD $nextSrc;
+}
