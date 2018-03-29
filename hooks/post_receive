@@ -1,0 +1,5 @@
+#!/bin/sh
+
+echo "Post_Receive HOOK STARTED"
+
+echo "HOOK FINISHED"
