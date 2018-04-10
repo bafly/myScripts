@@ -1,0 +1,103 @@
+global proc ext(){
+
+    global vector $gPlane[];
+    if (!size($gPlane))
+        return;
+
+    vector $P, $P1;
+    vector $vecs[];
+    $lssl = `ls -sl -fl -type float3`;
+    $comps = `doFindEdges $lssl`;
+    if (size($comps))
+        
+    else
+        $comps = `doFindVerts $lssl`;
+    vector $all_vec[];
+    //$sel = $comps[0]
+    // $P1 = `putOnPlane $vecs[0] $p $gPlane`
+    // $P1 = `doPutOnPlane $vecs $gPlane`
+    for ($sel in $comps){
+        print {"Edge: " + $sel};
+        $vecs = `xform -q -ws -t $sel`;
+        $p = unit($vecs[1] - $vecs[0]);
+        
+        $verts = doFindVerts({$sel});
+        $closest_vtx = "";
+        $dist = 0.0;
+        float $dists[];
+        $j = 0;
+        // find max distnace to exclude
+        for ($i=0; $i<size($vecs); $i++){
+            $P = $vecs[$i];
+            $d = getDistanceToPlane($P, $p, $gPlane);
+            $dists[$i] = $d;
+            if ($d > $dist){
+                $dist = $d;
+                $j = $i;
+            }
+        }
+        $vtx = $verts[!$j];
+        $P = $vecs[!$j];
+        $d = $dists[!$j];
+        $P1 = $P - ($p * $d);
+        print {" Moving Vertex: " + $vtx};
+        print {"  To: " + $P1};
+        move -ws ($P1.x) ($P1.y) ($P1.z) $vtx;
+    }
+}
+
+global proc vector[] vecplane(){
+
+    global vector $gPlane[];
+    // if (size($gPlane))
+    $ls_pts = `ls -fl -sl -type float3`;
+    if (size($ls_pts) && size($ls_pts) == 3){
+    
+        vector $O = `xform -q -ws -t $ls_pts[0]`;
+        vector $A = `xform -q -ws -t $ls_pts[1]`;
+        vector $B = `xform -q -ws -t $ls_pts[2]`;
+        $gPlane[0] = $O;
+        $gPlane[1] = $A;
+        $gPlane[2] = $B;
+    }
+    return $gPlane;
+}
+
+global proc vector doPutOnPlane( vector $vecData[],
+                                 vector $plane[] ){
+    
+    // Main Equation (find distance to dP1)
+    // d = (P - O) * n / p * n
+    // works with single point or point and its vector
+    float $eps = 0.001;
+    vector $P = $vecData[0];
+    vector $P1;
+    
+    $O = $plane[0];
+    $a = $plane[1] - $O;
+    $b = $plane[2] - $O;
+    if (size($vecData) > 1)
+        $p = unit($vecData[1] - $vecData[0]);
+    else
+        $p = unit($P - $O);
+    $OP = $P - $O;
+    $n = unit(cross($a, $b));
+    $dot = dot($p, $n);
+    
+    // check n direction
+    $sign = $dot < 0 ? -1 : 1;
+    $n *= $sign;
+    $dot *= $sign;
+    // check collinearity
+    if (abs($dot) == 0.0 || abs($dot) <= $eps)
+        return $P1;
+    
+    
+    // project p on n
+    // $pn = $dot * $n;
+    // $P1 = $P - $pn;
+    
+    $d = ($OP * $n) / ($p * $n);
+    $P1 = $P - ($p * $d);
+    return $P1;
+}
