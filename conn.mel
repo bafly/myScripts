@@ -1,0 +1,661 @@
+//v0.2      02/05'18: new: conUC(): convert selected channels connection
+//                    new: conPB(): connect first two sources to last 
+//                         target with pb
+//v0.1d     18/09'17: new: CHECK_CON(): check for unitConversion
+//v0.1d     28/06'17: upd: getPlugsFromCB()  - history attrs
+//                    upd: conSortSelection()- history attrs
+//                    upd: conto() shortened - using conSortSelection()
+//v0.1c     27/06'17: new: conMD() multiplyDivide
+//v0.1b     24/05'17: new: doDoubleCon() mdl or adl misc nodes for non zero values
+//v0.1a     20/05'17: upd: conto() smart connect if non zero values
+
+// usage:
+//      conMD("alfa", "8", "tx", 1.0, "*", 1):
+//          - creates muldiple divide node as source plg
+//          - last two selected items are will be connected as:
+//                  - pre last - input1 (srcA)
+//                  - last - input2 (srcB)
+//          args:
+//          - "alfa" - plgA for srcA or float(double) for input1
+//          - "8"    - plgB for srcB or float(double) for input2
+//          - "tx"   - plgC for target items (first selected items except last two)
+//          - 1.0    - float for unit conversion (idnk why)
+//          - "*"    - symbols (* - multiply, / - divide, ^ - power, "" - (none) no operation
+//      con(1.0);
+//          muliple connections to last selected transform -
+//          - make src to be the last in selection
+//            (channel box will display all attrs with same within selection)
+//          - select src attrs to which other should be connected
+//          1.0{0} - value conversion befor connect
+//
+//      conto("", "", 1.0);
+//          ""{0}  - will search any selceted attribute in channelBox
+//          ""{1}  - will reuse result from ""{0}
+//          1.0{2} - "as it" (no unitConversions will be performed)
+
+
+global proc string[] con(float $ucf, int $eq){
+
+    string $lssl[] = `ls -sl`;
+    string $plgs_data[] = getPlugsFromCB();
+    $src_data = $plgs_data[size($plgs_data)-1];
+    $srcs = stringToStringArray($src_data, " ");
+    $sz = size($srcs);
+    string $trgs_data[] = stringArrayRemove(
+        {$src_data}, 
+        $plgs_data
+        );
+    for ($plg_data in $trgs_data){
+        $trgs = stringToStringArray($plg_data, " ");
+        for ($i=0; $i<$sz; $i++){
+            $src = $srcs[$i];
+            $trg = $trgs[$i];
+            print {$src};
+            print {$trg};
+            if ($eq)
+                conDoEqualize $src $trg;
+            doCon $src $trg $ucf;
+        }
+    }
+    select $lssl;
+    return $plgs_data;
+}
+
+global proc string[] getPlugsFromCB(){
+
+    // works only with transform and shape's attrs of last selected transform
+    //      in channelBox
+    // returns, baked string arrays {"obj1.attr1 obj1.attr2..",
+    //                               "obj2.attr1 obj2.attr2..", ..}
+
+    string $plgs_data[];
+
+    $lssl = `ls -sl`;
+    $attrs = `channelBox -q -sma mainChannelBox`;
+    $attrs = stringArrayCatenate(`channelBox -q -ssa mainChannelBox`,
+                                 $attrs);
+    $sha = `channelBox -q -sha mainChannelBox`;
+    if (size($sha)){
+        string $fetched[];
+        for ($at in $sha){
+            $ls_hist = listConnections(
+                "-s", 1, "-d", 0, `channelBox -q -shp mainChannelBox`
+                );
+            for ($h in $ls_hist){
+                $chk_plg = `ls ($h + "." + $at)`;
+                if (size($chk_plg))
+                    $fetched[size($fetched)] = plugAttr($chk_plg[0]);
+
+            }
+        }
+        print "\n ::Hist Attrs fetched\n";
+        $sha = $fetched;
+        print $sha;
+    }
+    $attrs = stringArrayCatenate($sha, $attrs);
+
+    int $p;
+    for ($sel in $lssl){
+        // stringArrayAddPrefix($tmp_attrs, ($sel+"."));
+        $t = 0;
+        string $plgs[];
+        for ($at in $attrs){
+            $plg = `format -s $sel -s $at "^1s.^2s"`;
+            if (`objExists $plg`)
+                $plgs[$t++] = $plg;
+        }
+        $ls_chk = `ls $plgs`;
+        if (size($ls_chk))
+            $plgs_data[$p++] = stringArrayToString($ls_chk, " ");
+    }
+    return $plgs_data;
+}
+
+global proc con_(string $plgA, string $plgB, float $ucf){
+    
+    int $s;
+    $lssl = `ls -sl`;
+
+        
+    $lssl_sz = size($lssl);
+    if ($lssl_sz%2)
+        return;
+
+    if ($plgB == "")
+        $plgB = $plgA;
+
+    for ($s=0; $s<$lssl_sz; $s+=2){
+
+        $src = $lssl[$s];
+        $src_plg = ($src + "." + $plgA);
+        $trg = $lssl[$s+1];
+        $trg_plg = ($trg + "." + $plgB);
+        $pairs = {$src_plg, $trg_plg};
+        if (size(`ls $pairs`) != 2){
+            print(`format 
+                -s $src_plg 
+                -s $trg_plg 
+                "\n  <!>  NOT EXISTS:\n  :::: ^1s : ^2s\n"`);
+            continue;
+        }
+        doCon $src_plg $trg_plg $ucf;
+    }
+    
+}
+
+global proc conto(string $plgA, string $plgB, float $ucf, int $eq){
+
+    // trg values will be preserved if
+    //      they are non zero(offset) and not equal to src plgs val
+    //      to override it reset them
+    //      or make equal first(i.o translate or rotate)
+
+    int $s;
+    string $init_sel = `ls -sl`;
+    $lssl = conSortSelection({}, $plgA, $plgB);
+
+        
+    $lssl_sz = size($lssl);
+    if (!$lssl_sz)
+        return;
+            
+    $src_plg = $lssl[$lssl_sz-1];
+    
+    // quit if $s is last item
+    for ($s=0; $s<$lssl_sz-1; $s++){
+        $trg_plg = $lssl[$s];
+        if ($eq)
+            conDoEqualize $src_plg $trg_plg;    
+        doCon $src_plg $trg_plg $ucf;
+    }
+    
+    select $init_sel;
+}
+
+global proc doConTo(string $lssl[], float $ucf, int $equalize){
+
+    $lssl_sz = size($lssl);
+    $src_plg = $lssl[$lssl_sz-1];
+
+    // quit if $s is last item
+    for ($s=0; $s<$lssl_sz-1; $s++){
+
+        $trg_plg = $lssl[$s];
+        $pairs = {$src_plg, $trg_plg};
+        if (!`objExists $trg_plg`){
+            print(`format 
+                -s $trg_plg 
+                "\n  <!>  NOT EXISTS:\n  :::: ^1s\n"`);
+            continue;
+        }
+        if ($equalize)
+            conDoEqualize $src_plg $trg_plg;
+        doCon $src_plg $trg_plg $ucf;
+    }
+}
+
+global proc string doDoubleCon(
+        string $plgA,
+        string $plgB,
+        string $ntype
+){
+
+    // node name
+    $nname = "adl_";
+    if ($ntype == "multDoubleLinear" || startsWith($ntype, "mult")){
+        $nname = "mdl_";
+        $ntype = "multDoubleLinear";
+    }
+    if ($ntype == "addDoubleLinear" || startsWith($ntype, "add")){
+        $ntype = "addDoubleLinear";
+        $nname = "adl_";
+    }
+    $nname += `substitute "\\." $plgA "_"`;
+
+    // create math node
+    $cmd = `format -s $ntype -s $nname "createNode -n ^2s ^1s"`;
+    $nnode = eval($cmd);
+
+    // if as plugs used float nums
+    if (!`objExists $plgA`) setAttr(".i1", (float)$plgA);
+    else connectAttr $plgA .i1;
+    
+    if (!`objExists $plgB`) setAttr(".i2", (float)$plgB);
+    else connectAttr $plgB .i2;
+    
+    return ($nnode+".o");
+}
+
+// TODO: works only with one attr(in/outputX)
+global proc string conMD(
+        string $plgA,
+        string $plgB,
+        string $plgC,
+        float $ucf,
+        string $mode,
+        int $eq
+){
+    // plgA - srcA
+    // plgB - srcB
+    // (MD replace plgA and plgB and becomes plgA)
+    // plgC - trgets attr
+    // $mode(symbol) - "*" [1] multiply
+    //               - "/" [2] divide
+    //               - "^" [3] power
+    //               - ""  [0] (None) no operation
+    // eq - equalize before connect
+    //  (ohterwise adl will be added to each plg)
+    
+    // check if plgs are not defined
+    //  chennelBox selection is orderless so
+    //  we are not concerned in which order it 
+    //  should be connected bcs of multiplication
+    $n = 0;
+    $lscb = getPlugsFromCB();
+    if ($plgA == "")
+        if (size($lscb))
+            $plgA = plugAttr($lscb[$n++]);
+    else
+        if ($plgB == "")
+            if (size($lscb) >= $n+1)
+                $plgB = plugAttr($lscb[$n]);
+    print ($plgA + " " + $plgB + "\n");
+    // work with current selection
+    string $out_at = "ox";
+    string $srcA, $srcB;
+
+    $lssl = `ls -sl`;
+    $lssl_sz = size($lssl);
+    if (!$lssl_sz)
+        return "";
+    $srcA = $lssl[$lssl_sz-2];
+    $srcB = $lssl[$lssl_sz-1];
+    
+    string $srcA_plg, $srcB_plg;
+    
+    // create math node
+    // node name
+    $ntype = "multiplyDivide";
+    $nname = "md_";
+    
+    $cmd = `format -s $ntype -s $nname "createNode -n ^2s ^1s"`;
+    $op = 1;
+    $md = eval($cmd);
+    switch($mode){
+        case "":
+            $op = 0;
+            break;
+        case "^":
+            $op++;
+        case "/":
+            $op++;
+        default:
+            break;
+
+    }
+    print ("\n ::op: " + $mode + `format -s $op "[^1s]\n"`);
+    setAttr .op $op;
+    print "\list:";
+    print $lssl;
+    
+    // arg $plgA corresponds to input1 and *B to i2
+    // if both args are attrs($plgA="tx", $plgB="distance") two last items
+    //  in selection should be considered as source plgs:
+    //      >> $src_plgA = $sels[-2] + ".tx";
+    //      >> $src_plgB = $sels[-1] + ".distance";
+    // if only one of them is attr(A:"distance"), and second is 
+    //  float(B:"8") then only last selected item will be source:
+    //      >> $src_plgA = $sels[-1] + ".distance";
+    //      >> setAttr ".input2" (float)"8";
+    // if plg(A/B) is attr, it will be removed from original list
+    // last selected item's (one)attribute could be defined with channelBox
+    $plgs = {$plgB, $plgA};
+    for ($p=0, $l=0; $p<2; $p++){
+
+        $plg = $plgs[$p];
+        $inplg = `format -s $md -s (2-$p) "^1s.i^2sx"`;
+        print ($inplg + " << ");
+        // if plugs is used as float
+        if (`match "^[-.0-9]+$" $plg` != ""){
+            print("val: " + $plg + "\n");
+            setAttr($inplg, (float)$plg);
+        } 
+        else{
+            $l++;
+            $src = $lssl[$lssl_sz-$l];
+            $src_plg = $src + "." + $plg;
+            print("plg: " + $src_plg + "\n");
+            connectAttr $src_plg $inplg;
+            $nname += `substitute "\\." $src_plg "_"`;
+            stringArrayRemoveAtIndex($lssl_sz-$l, $lssl);
+        }
+    }
+
+    $md = `rename $md $nname`;
+    print $lssl_sz;
+    print (size($lssl));
+    print (" md: " + $md + "\n");
+    $lssl[$lssl_sz-$l] = $md;                    // src replacement
+    
+    print "\nnew list:";
+    print $lssl;
+    // modify selection
+    $lssl = conSortSelection($lssl, $out_at, $plgC);
+    print "\nbrand new list:";
+    print $lssl;
+    
+    if (!size($lssl))
+        return "";
+
+    doConTo $lssl $ucf $eq;
+    select $lssl;
+    return ($md + "." + $out_at);
+}
+
+// obsolete
+global proc string doADLCon(
+        
+        string $src_plg,
+        // string $trg_plg, 
+        float $init_val){
+
+    // returns $src_plg of new node to use instead of orignal
+    // will be used after unitConversion
+    $nname = "adl_" + `substitute "\\." $src_plg "_"`;
+    string $adl = `createNode -n $nname addDoubleLinear`;
+        setAttr .i1 $init_val;
+        connectAttr $src_plg .i2;
+
+    return ($adl + ".o");
+}
+
+global proc conPB(float $blend){
+
+    $lssl = `ls -sl -tr`;
+    if (size($lssl) < 3)
+        return;
+    $srcA = $lssl[0];
+    $srcB = $lssl[1];
+    $trg = $lssl[2];
+    $lscb = `channelBox -q -sma mainChannelBox`;
+    // filter only rotate and translate
+    if (!size($lscb))
+        $lscb = {"rotate", "translate"};
+    $pb = `format -s "pb" -s $trg "^1s_^2s"`;
+    $pb = `createNode -n $pb -ss pairBlend`;
+    for ($at in $lscb){
+        $srcA_p = $srcA + "." + $at;
+        $srcB_p = $srcB + "." + $at;
+        $trg_p = $trg + "." + $at;
+        doConPairBlend($srcA_p, $srcB_p,
+                       $trg_p, $pb
+                       );
+    }
+    setAttr ($pb + ".w") $blend;
+}
+
+global proc
+string doConPairBlend(string $srcA, string $srcB,
+                      string $trg, string $pb
+                      ){
+    //TODO: check if trg node already has pb, if so, reuse
+    //      node with free plugs if there
+    string $long_at, $at, $pb1_p, $pb2_p, $pbOut_p;
+    if (!`objExists $pb`){
+        if ($pb == "")
+            $pb = `format -s "pb" -s $trg "^1s_^2s"`;
+        $pb = `createNode -n $pb -ss pairBlend`;
+    }
+    // print "\n| pair blend:\n";
+    // print {":trg " + $trg};
+    $long_at = `attributeName -l $trg`;
+    $at = toupper(substring($long_at, 1, 1));
+    $at += substring($long_at, 2, size($long_at));
+    // print {"pb_at " + $at};
+    $pb1_p = `format -s $pb -s $at "^1s.in^2s1"`;
+    $pb2_p = `format -s $pb -s $at "^1s.in^2s2"`;
+    $pbOut_p = `format -s $pb -s $at "^1s.out^2s"`;
+    if (size(`ls $pb1_p $pb2_p $pbOut_p`) != 3){
+        print "\n <!> Wrong attributes:\n";
+        print {$pb1_p, $pb2_p, $pbOut_p};
+        return $pb;
+    }
+    connectAttr -f $srcA $pb1_p;
+    connectAttr -f $srcB $pb2_p;
+    connectAttr -f $pbOut_p $trg;
+    // print "|end\n";
+    return $pb;
+}
+
+global proc doCon(
+        string $src_plg, 
+        string $trg_plg,
+        float  $ucf
+        ){
+
+    // check if plugs has non zero values
+    // TODO: if all given targets has the same non zero values
+    //       i should reuse existing conversion nodes.
+    //       To do so i need to check values of src_plg's output
+    //       conversions nodes
+    float $eps = 0.0001;
+    float $def = `getAttr $src_plg`;
+    float $val = `getAttr $trg_plg`;
+    print ("\n<"+(abs($val-$def)));
+    // using
+    if ($ucf == 1.0){
+        // add addDoubleLinear if target non zero val
+        if ($val && abs($val-$def) > $eps)
+            $src_plg = doDoubleCon($src_plg, $val, "addDoubleLinear");
+        catchQuiet(`connectAttr -f $src_plg $trg_plg`);
+    }
+    else{
+        $nname = `substitute "\\." $src_plg "_"`;
+        $uc = `createNode -n $nname unitConversion`;
+            setAttr .cf $ucf;
+            connectAttr $src_plg .i;
+            // add addDoubleLinear if target non zero val
+            if ($val && abs($val-$def) > $eps)
+                doDoubleCon(($uc+".o"), $val, "addDoubleLinear");
+            connectAttr -f .o $trg_plg;
+    }
+    print ">\n";
+
+}
+
+global proc conAll(float $ucf){
+
+    conto tx "" $ucf 0; conto ty "" $ucf 0; conto tz "" $ucf 0; 
+    conto rx "" $ucf 0; conto ry "" $ucf 0; conto rz "" $ucf 0; 
+    conto sx "" $ucf 0; conto sy "" $ucf 0; conto sz "" $ucf 0;
+    
+}
+
+global proc doConAll(string $src, string $trg, float $ucf){
+
+    doCon ($src + ".tx") ($trg + ".tx") $ucf;
+    doCon ($src + ".ty") ($trg + ".ty") $ucf;
+    doCon ($src + ".tz") ($trg + ".tz") $ucf;
+    
+    doCon ($src + ".rx") ($trg + ".rx") $ucf;
+    doCon ($src + ".ry") ($trg + ".ry") $ucf;
+    doCon ($src + ".rz") ($trg + ".rz") $ucf;
+    
+    doCon ($src + ".sx") ($trg + ".sx") $ucf;
+    doCon ($src + ".sy") ($trg + ".sy") $ucf;
+    doCon ($src + ".sz") ($trg + ".sz") $ucf;
+}
+
+global proc conbycb(){
+
+    // last selected node is source
+    $lssl = `ls -sl`;
+
+    $lssl_sz = size($lssl);
+    $src = $lssl[$lssl_sz-1];
+    stringArrayRemoveAtIndex($lssl_sz-1, $lssl);
+
+    $attrs = `channelBox -q -sma mainChannelBox`;
+    $attrs = stringArrayCatenate(`channelBox -q -ssa mainChannelBox`, $attrs);
+    for ($at in $attrs){
+        $src_plg = `format -s $src -s $at "^1s.^2s"`;
+        print(`format -s $src_plg ":::: ^1s\n"`);
+        for($sel in $lssl){
+            $plg = `format -s $sel -s $at "^1s.^2s"`;
+            print(`format -s $plg "  :: ^1s\n"`);
+            connectAttr -f $src_plg $plg;
+        }
+    }
+
+}
+
+global proc string[] conUC(float $cf){
+        
+    string $ucs[];
+    // creates unit conversion if selected attribute has inputs
+    $lssl = `ls -sl`;
+    $lscb = `channelBox -q -sma mainChannelBox`;
+    int $u;
+    for ($at in $lscb){
+        for ($sel in $lssl){
+            $plg = `format -s $sel -s $at "^1s.^2s"`;
+            if (!`objExists $plg`)
+                continue;
+            $lscon = `listConnections -s 1 -d 0 -p 1 $plg`;
+            if (!size($lscon))
+                continue;
+            $src_plg = $lscon[0];
+            $ucs[$u++] = doUCCon($src_plg, $plg, $cf);
+        }
+    }
+    return $ucs;
+}
+
+global proc string doUCCon(
+
+        string $src_plg,
+        string $trg_plg, 
+        float $cf){
+
+    // returns $src_plg of new node to use instead of orignal
+    // will be used after unitConversion
+    $nname = "uc_" + `substitute "\\." $src_plg "_"`;
+    string $node = `createNode -n $nname unitConversion`;
+        setAttr .cf $cf;
+        connectAttr $src_plg .i;
+    if ($trg_plg != "")
+        connectAttr -f .o $trg_plg;
+    
+    return ($node + ".o");
+
+
+}
+
+global proc conequalize(string $plgA, string $plgB){
+
+    $lssl = conSortSelection({}, $plgA, $plgB);
+    $lssl_sz = size($lssl);
+    if (!$lssl_sz)
+        return;
+    $lssl_sz = size($lssl);
+    string $src_plg = $lssl[$lssl_sz-1];
+    stringArrayRemoveAtIndex($lssl_sz-1, $lssl);
+
+    // quit if $s is last item
+    for ($s=0; $s<$lssl_sz-1; $s++){
+
+        string $trg_plg = $lssl[$s];
+        $pairs = {$src_plg, $trg_plg};
+        if (!`objExists $trg_plg`){
+            print(`format 
+                -s $trg_plg 
+                "\n  <!>  NOT EXISTS:\n  :::: ^1s\n"`);
+            continue;
+        }
+        conDoEqualize($src_plg, $trg_plg);
+    }
+    
+}
+
+global proc conDoEqualize(string $src_plg, string $trg_plg){
+
+    $val = `getAttr $src_plg`;
+    setAttr $trg_plg $val;
+}
+
+global proc string[] conSortSelection(string $lssl[], string $plgA, string $plgB){
+
+
+    
+    // load last selected item
+    int $s;
+    if (!size($lssl))
+        $lssl = `ls -sl`;
+        
+    $lssl_sz = size($lssl);
+    if (!$lssl_sz)
+        return {};
+    $src = $lssl[$lssl_sz-1];
+
+    // check src plg: it may be selected: e.g. group1.scaleX
+    string $srcA_plg;
+    $chk_plg = plugAttr($src);
+    if ($chk_plg != ""){
+        $plgA = $chk_plg;
+        $src = plugNode($src);
+    }
+    if ($plgA == ""){
+        $lscb = getPlugsFromCB();
+        $plgA = plugAttr($lscb[0]);
+    }
+    print("plgA: " + $plgA + "\n");
+    // it may happen that plg is not belongs to src
+    $cb_hist = `channelBox -q -sha mainChannelBox`;
+    if (size($cb_hist)){
+        $ls_hist = listConnections(
+            "-s", 1, "-d", 0, `channelBox -q -shp mainChannelBox`
+            );
+        $break = 1;
+        for ($h in $ls_hist){
+            $ls_plg = `ls ($h + "." + $plgA)`;
+            if (size($ls_plg)){
+                $src = $h;
+                $break = 0;
+                break;
+            }
+        }
+        //if ($break) return {};
+    }
+    $srcA_plg = $src + "." + $plgA;
+    print("srcA_plg: " + $srcA_plg + "\n");
+
+    // if need to connect one attr to another of same node
+    if($lssl_sz == 1){
+        // check in and out plugs shoudn't be the same
+        if ($plgA == $plgB){
+            print(`format -s $plgA 
+                          -s $plgB "\n  [!] Cycle [!]: ^1s ^2s\n"`);
+            return {};
+        }
+        $lssl_sz += 1;
+    }
+
+    if ($plgB == "")
+        $plgB = $plgA;
+
+    // modifie selection
+    stringArrayRemoveAtIndex(($lssl_sz-1), $lssl);
+    string $new_sel[];
+    int $t;
+    for ($trg in $lssl){
+        $plg = $trg;
+        if (`objExists ($trg + "." + $plgB)`){
+            $plg += "." + $plgB;
+            $new_sel[$t++] = $plg;
+        }
+    }
+    $new_sel[$t] = $srcA_plg;
+    $lssl = $new_sel;
+
+    return $new_sel;
+}
