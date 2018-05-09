@@ -1,0 +1,52 @@
+global proc string[] lscb(){
+
+    //nb: only one shape's attributes could be selected
+
+    string $attrs_sn[];
+    $lssl = `ls -sl`;
+
+    $attrs_sn = `channelBox -q -sma mainChannelBox`;
+    $attrs_shps = `channelBox -q -ssa mainChannelBox`;
+    $shps = `channelBox -q -shp mainChannelBox`;
+    $attrs_sn = stringArrayCatenate($attrs_shps, $attrs_sn);
+
+    string $items[];
+    int $i;
+    for ($sel in $lssl){
+        for ($at in $attrs_sn){
+            $plg = $sel+"."+$at;
+            // print $at;
+            //$ls_at = `listAttr $plg`;
+            $ls_plg = `ls $plg`;
+            if (size($ls_plg))
+                $items[$i++] = $ls_plg[0];
+            /*
+            if (`attributeExists $at $sel`){
+                
+                $at_ln = `attributeQuery -n $lssl[0] -ln $at`;
+                $items[$i++] = $sel + "." + $at_ln;
+            }
+            */
+
+        }
+    }
+    // inputs
+    $inps = `channelBox -q -sha mainChannelBox`;
+    if (size($inps)){
+        $inp_plgs = $inps;
+        $inp_nd = `channelBox -q -hol mainChannelBox`;
+        stringArrayAddPrefix($inp_plgs, ($inp_nd[0] + "."));
+        $items = stringArrayCatenate($inp_plgs, $items);
+    }
+
+    // outputs
+    $outps = `channelBox -q -soa mainChannelBox`;
+    string $outp_plgs[] = $outps;
+    if (size($outps)){
+        $ls_out_node = `channelBox -q -ool mainChannelBox`;
+        stringArrayAddPrefix $outp_plgs ($ls_out_node[0]+".");
+    }
+    $items = stringArrayCatenate($outp_plgs, $items);
+    
+    return $items;    
+}

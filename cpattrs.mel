@@ -1,0 +1,99 @@
+//v0.1 codefix
+
+// last select is source
+//      targets shapes will be matched by src's types
+
+source lscb;
+
+global proc cpattrs_(){
+    
+    $lssl = `ls -sl`;
+
+    // get src shape
+    string $src = $lssl[size($lssl)-1];
+    string $ls_shps[] = `listRelatives -s -ni $src`;
+    if (size(`ls -s -ni $src`))
+        $ls_shps = {$src};
+    print "$ls_shps\n";
+    print $ls_shps;
+    print "\n";
+    // targets
+    $stype = `objectType $src`;
+    print "$stype\n";
+    print $stype;
+    print "\n";
+    $trgs = listRelatives(
+        "-s", "-ni",
+        "-type", $stype,
+        stringArrayRemove({$src}, $lssl)
+    );
+    if (!size($trgs))
+        $trgs = ls(stringArrayRemove({$src}, $lssl));
+    print "$trgs\n";
+    print $trgs;
+    for ($shp in $ls_shps)
+        for ($trg in $trgs)
+            doCopyAttrs($shp, $trg, 1);
+}
+
+
+global proc string[] cpattrs(string $trg, int $ispxy){
+
+    $lssl = `ls -sl`;
+    $lscb = `lscb`;
+
+    string $result[];
+    int $r;
+    for ($plg in $lscb)
+        $result[$r++] = doCopyAttrs($plg, $trg, $ispxy);
+
+    return $result;
+
+}
+
+
+// NB: i don't remember why pxy is bad, animation curves are
+//      connectiong to orginal plugs,so if you query for animated channels they
+//      are not treated so.
+global proc string doCopyAttrs(string $srcPlg, string $trg, int $isPxy){
+    
+    float $val = `getAttr $srcPlg`;
+    $attr = plugAttr($srcPlg);
+    $nd = plugNode($srcPlg);
+    $atype = `attributeQuery -at -n $nd $attr`;
+    // $iskey = `attributeQuery -k -n $nd $attr`;
+    $iskey = 1;
+    $ishid = 0;
+    $trgPlg = $trg + "." + $attr;
+    $src_attr_data = `ls -st $srcPlg`;
+    $lattr = plugAttr($src_attr_data[0]);
+    string $addattr_cmd = `format 
+        -s $atype 
+        -s $lattr 
+        -s $attr 
+        -s $iskey 
+        -s $ishid 
+        "addAttr -at ^1s -ln ^2s -sn ^3s -k ^4s -h ^5s"`;
+    if ($atype == "enum"){
+        $enums = attributeQuery("-le", "-n",
+                                plugNode($srcPlg), plugAttr($srcPlg));
+        $addattr_cmd += `format -s $enums " -en \":^1s\""`;
+    }
+    if (!`attributeExists $attr $trg`){
+        if ($isPxy)
+            $addattr_cmd += " -pxy " + $srcPlg;
+        $addattr_cmd += " " + $trg;
+        print {"  Creating attr:\n"};
+        print {$addattr_cmd};
+        eval($addattr_cmd);
+    }
+    if (!`objExists $trgPlg`){
+        string $msg = `format -s $attr -s $trg "  Can't create attribute: ^1s on: ^2s"`;
+        print {$msg};
+        return "";
+    }
+    setAttr $trgPlg $val;
+    if (!$isPxy)
+        connectAttr -f $trgPlg $srcPlg;
+    return $trgPlg;
+}

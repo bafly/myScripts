@@ -1,0 +1,85 @@
+// renames jnts hierarchy
+//      jnts parent grp, parent grps constriants or 
+//      constraints under joint itself
+
+proc string[] getconstr(string $dagnode){
+    
+    string $constraints[] = `listRelatives -c -type constraint $dagnode`;
+    return $constraints;
+}
+proc fixnames(string $items[], string $bname){
+
+    for ($item in $items)
+        rename $item ($bname + "_" + (`match "[^_]+$" $item`));
+}
+
+global proc renhi_(){
+    
+    $lssl = `ls -sl`;
+    if (`objectType -i "joint" $lssl[0]`)
+        if (match("_jnt$*", string($lssl[0])) != "_jnt")
+            $lssl[0] = `rename $lssl[0] ($lssl[0] + "_jnt#")`;
+    
+    $ls_par = `listRelatives -p $lssl[0]`;
+    if (match("_grp$", string($ls_par[0])) == "_grp")
+        $ls_par[0] = `rename $ls_par[0] ($lssl[0] + "_grp")`;
+    else if (match("_offset$", string($ls_par[0])) == "_offset")
+        $ls_par[0] = `rename $ls_par[0] ($lssl[0] + "_offset")`;
+    else if (match("null[0-9]{0,2}", string($ls_par[0])) != ""){
+        $ls_par_par = `listRelatives -p $ls_par[0]`;
+        if (size($ls_par_par) && 
+                match("_grp$", string($ls_par_par[0])) == "_grp")
+            $ls_par[0] = `rename $ls_par[0] ($lssl[0] + "_offset")`;
+        else
+            $ls_par[0] = `rename $ls_par[0] ($lssl[0] + "_grp")`;
+    }
+    $ls_con = `listRelatives -type constraint -c $lssl[0]`;
+    fixnames($ls_con, $lssl[0]);
+    $ls_con = getconstr($ls_par[0]);
+    fixnames($ls_con, $lssl[0]);
+}
+
+global proc renhi(){
+
+    string $sel;
+    $lssl = `ls -sl`;
+    string $split[];
+
+    for ($sel in $lssl){
+        $bname = `match "[^|]+$" $sel`;
+        $lspar = `listRelatives -p -f $sel`;
+        if (!size($lspar))
+            continue;
+        tokenize($bname, "_", $split);
+        $pfx = $split[0] + "grp";
+        $split[0] = $pfx;
+        
+        $nn = stringArrayToString($split, "_");
+        rename $lspar $nn;
+
+    }
+}
+
+
+// fix contraint names
+global proc string[] renconstrs(){
+    
+    string $lssl[] = `ls -sl -type constraint`;
+
+    if (!size($lssl)){
+        $lssl = `ls -type constraint`;
+    }
+
+    string $ls_par[];
+    for ($sel in $lssl){
+        $ls_par = `listRelatives -f -p $sel`;
+        print $ls_par;
+        $bname = `match "[^|]+$" $ls_par[0]`;
+        print $bname;
+        $type = `objectType $sel`;
+        rename $sel ($bname + "_" + $type);
+    }
+
+
+    return $lssl;
+}

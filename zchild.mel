@@ -1,0 +1,139 @@
+// zero out channels
+
+global proc zchild(){
+    
+    $lssl = `ls -sl`;
+    $sel = $lssl[0];
+    
+
+    $pass_attrs = {
+        "visibility"
+    };
+    $attrs = `listAttr -k $sel`;
+    $attrs = stringArrayRemove($pass_attrs, $attrs);
+
+    for ($at in $attrs){
+        doZChild($sel, $at, 0);
+    }
+
+}
+
+global proc doZChild(   string $sel, 
+                        string $at, 
+                        float $val )
+{
+
+    // if $val - zero - current value will be used
+
+    $sel_plg = $sel + "." + $at;
+    $pgrp = `listRelatives -p $sel`;
+    
+    if (!size($pgrp))
+        print (`format -s $sel "\n  <!>  No parent grp: ^1s\n"`);
+    print ("  ::parent grp: " + $pgrp[0] + "\n");
+    print ("  ::control: " + $sel + "\n");
+    
+    $pgrp_plg = $pgrp[0] + "." + $at;
+    $at = `attributeQuery -ln -n $sel $at`;
+    $head_str = startString ($at, (`size $at`) -1);
+
+    // guess transformation and axis
+    $trs_long = {"translate", "rotate", "scale"};
+    $trs = {"t", "r", "s"};
+    $ind = stringArrayFind($head_str, 0, $trs_long);
+    if ($ind == -1){
+        print ("\n  <!!> CUSTOM ATTRIBUTE:" + $sel_plg + "\n");
+        return;
+    }
+
+    $dv = 0;
+    $axis = tolower(endString($at, 1));
+    if (!$val)
+        $val = float(`getAttr $sel_plg`);
+    // $inv_val = $val;
+    
+    string $cmd_trs;
+    switch ($ind){
+        case 0:
+            $cmd_trs = "move";
+            break;
+        case 1:
+            $cmd_trs = "rotate";
+            break;
+        case 2:
+            $cmd_trs = "scale";
+            $dv = 1;
+            // $val = 1/$val;
+            break;
+        default:
+            break;
+    }
+
+
+    catchQuiet(`setAttr $sel_plg $dv`);
+    $cmd_trs += (`format -s $axis " -os -r -^1s "` + "^1s 0 0 ^2s");
+    print ("  ::CMD: " + `format -s $val -s $pgrp $cmd_trs` + "\n");
+    
+    eval(`format -s $val -s $pgrp $cmd_trs`);
+
+    // check outputs
+    $outs = `listConnections -type "transform" -p 1 -d 1 -s 0 $sel_plg`;
+    if (size($outs)){
+
+        print("\n  <!> DONT FORGET TO CHECK DEPs:\n"+
+            "-----------------------------------\n");
+        print $outs;
+        print "\n";
+        $res = `confirmDialog 
+            -m ("  <!>  Resolv DEPs?:\n"+
+                "---------------------------\n"+
+                stringArrayToString($outs, "\n"))`;
+        if ($res == "Confirm"){
+            for ($dep in $outs)
+                $dep_at = plugAttr($dep);
+                $dep_node = plugNode($dep);
+                doZChild $dep_node $dep_at $val;
+        }
+    }
+
+}
+global proc _doZChild(string $sel, int $ind, int $val){
+
+    
+}
+
+global proc resolvDeps( string $dep, 
+                        string $cmd, 
+                        float $val ){
+
+    $dep_par = `listRelatives -p $dep`;
+
+    if (!size($dep_par))
+        return;
+
+    eval(`format -s $val -s $dep_par[0] $cmd`);
+}
+
+global proc zpar(){
+
+    $lssl = `ls -sl`;
+    for ($sel in $lssl)
+        doZPar $sel;
+}
+
+global proc doZPar(string $sel){
+    
+    $ls_par = `listRelatives -p $sel`;
+    if (!size($ls_par))
+        return;
+    $trg = $ls_par[0];
+    //vector $posA = `xform -q -ws -rp $sel`;
+    vector $posB = `xform -q -ws -rp $sel`;
+    //vector $rotA = `xform -q -ws -ro $sel`;
+    vector $rotB = `xform -q -ws -ro $sel`;
+    
+    xform -os -t 0 0 0 $trg;
+    xform -os -ro 0 0 0 $trg;
+    xform -ws -t ($posB.x) ($posB.y) ($posB.z) $sel;
+    xform -ws -ro ($rotB.x) ($rotB.y) ($rotB.z) $sel;    
+}

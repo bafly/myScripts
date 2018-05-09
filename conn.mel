@@ -1,6 +1,8 @@
 //v0.2      02/05'18: new: conUC(): convert selected channels connection
 //                    new: conPB(): connect first two sources to last 
 //                         target with pb
+//v0.1f     17/11'17: new: adlTOmdl()
+//v0.1e     14/11'17: new: conB2A(): connect with blendTwoAttr
 //v0.1d     18/09'17: new: CHECK_CON(): check for unitConversion
 //v0.1d     28/06'17: upd: getPlugsFromCB()  - history attrs
 //                    upd: conSortSelection()- history attrs
@@ -33,6 +35,7 @@
 //          ""{1}  - will reuse result from ""{0}
 //          1.0{2} - "as it" (no unitConversions will be performed)
 
+global int $gBaIsPxy = -1;
 
 global proc string[] con(float $ucf, int $eq){
 
@@ -143,6 +146,7 @@ global proc con_(string $plgA, string $plgB, float $ucf){
     
 }
 
+/// TODO add period to plgA/B in $lssl
 global proc conto(string $plgA, string $plgB, float $ucf, int $eq){
 
     // trg values will be preserved if
@@ -151,25 +155,28 @@ global proc conto(string $plgA, string $plgB, float $ucf, int $eq){
     //      or make equal first(i.o translate or rotate)
 
     int $s;
-    string $init_sel = `ls -sl`;
-    $lssl = conSortSelection({}, $plgA, $plgB);
+    string $lssl[] = `ls -sl`;
+
+    $ls_plgs = `ls $plgA $plgB`;
+    if (!size($ls_plgs))
+        $ls_plgs = conSortSelection({}, $plgA, $plgB);
 
         
-    $lssl_sz = size($lssl);
+    $lssl_sz = size($ls_plgs);
     if (!$lssl_sz)
         return;
             
-    $src_plg = $lssl[$lssl_sz-1];
+    $src_plg = $ls_plgs[$lssl_sz-1];
     
     // quit if $s is last item
     for ($s=0; $s<$lssl_sz-1; $s++){
-        $trg_plg = $lssl[$s];
+        $trg_plg = $ls_plgs[$s];
         if ($eq)
             conDoEqualize $src_plg $trg_plg;    
         doCon $src_plg $trg_plg $ucf;
     }
     
-    select $init_sel;
+    select $lssl;
 }
 
 global proc doConTo(string $lssl[], float $ucf, int $equalize){
@@ -352,21 +359,23 @@ global proc string conMD(
     return ($md + "." + $out_at);
 }
 
-// obsolete
-global proc string doADLCon(
-        
-        string $src_plg,
-        // string $trg_plg, 
-        float $init_val){
-
-    // returns $src_plg of new node to use instead of orignal
-    // will be used after unitConversion
-    $nname = "adl_" + `substitute "\\." $src_plg "_"`;
-    string $adl = `createNode -n $nname addDoubleLinear`;
-        setAttr .i1 $init_val;
-        connectAttr $src_plg .i2;
-
-    return ($adl + ".o");
+global proc conADL(){
+    $lscb = `channelBox -q -sma mainChannelBox`;
+    $lssl = `ls -sl`;
+    for ($at in $lscb){
+        for ($sel in $lssl){
+            $plg = $sel + "." + $at;
+            $lscon = `listConnections -s 1 -d 0 -p 1 $plg`;
+            if (size($lscon)){
+                $adl = `createNode -n ("adl_" + $sel + "_" + $at) -ss addDoubleLinear`;
+                connectAttr -f $lscon[0] ($adl + ".i1");
+                connectAttr -f ($adl + ".o") $plg;
+                if (!`objExists ($sel + ".offset")`)
+                    addAttr -at double -ln offset -k 1 $sel;
+                connectAttr -f ($sel + ".offset") ($adl + ".i2");
+            }
+        }
+    }
 }
 
 global proc conPB(float $blend){
@@ -427,37 +436,79 @@ string doConPairBlend(string $srcA, string $srcB,
     return $pb;
 }
 
+// obsolete
+global proc string doADLCon(
+        
+        string $src_plg,
+        // string $trg_plg, 
+        float $init_val){
+
+    // returns $src_plg of new node to use instead of orignal
+    // will be used after unitConversion
+    $nname = "adl_" + `substitute "\\." $src_plg "_"`;
+    string $adl = `createNode -n $nname addDoubleLinear`;
+        setAttr .i1 $init_val;
+        connectAttr $src_plg .i2;
+
+    return ($adl + ".o");
+}
+
 global proc doCon(
         string $src_plg, 
         string $trg_plg,
         float  $ucf
         ){
 
+    global int $gBaIsPxy;
+    int $ispxy = $gBaIsPxy <= 0 ? 0 : 1;
     // check if plugs has non zero values
+    // if ucf is zero - reverse will be used
     // TODO: if all given targets has the same non zero values
     //       i should reuse existing conversion nodes.
     //       To do so i need to check values of src_plg's output
     //       conversions nodes
     float $eps = 0.0001;
-    float $def = `getAttr $src_plg`;
-    float $val = `getAttr $trg_plg`;
+    float $def = 0.0;
+    float $val;
+    if (`objExists $src_plg`)
+        $def = `getAttr $src_plg`;
+    else
+        if (`objExists $trg_plg`)
+            $def = `getAttr $trg_plg`;
+    if (!`objExists $src_plg` && `objExists $trg_plg`){
+        $at = plugAttr($src_plg);
+        $node = plugNode($src_plg);
+        $at_data = `ls -st $trg_plg`;
+        $atlong = plugAttr($at_data[0]);
+        $attype = $at_data[1];
+        if ($ispxy)
+            addAttr -at $attype -ln $atlong -sn $at -k 1 -pxy $trg_plg $node;
+        else
+            addAttr -at $attype -ln $atlong -sn $at -k 1 $node;
+    }
+    $val = `getAttr $trg_plg`;
     print ("\n<"+(abs($val-$def)));
     // using
-    if ($ucf == 1.0){
-        // add addDoubleLinear if target non zero val
-        if ($val && abs($val-$def) > $eps)
-            $src_plg = doDoubleCon($src_plg, $val, "addDoubleLinear");
-        catchQuiet(`connectAttr -f $src_plg $trg_plg`);
+    if (!$ucf){
+        doRevCon $src_plg $trg_plg;
     }
     else{
-        $nname = `substitute "\\." $src_plg "_"`;
-        $uc = `createNode -n $nname unitConversion`;
-            setAttr .cf $ucf;
-            connectAttr $src_plg .i;
+        if ($ucf == 1.0){
             // add addDoubleLinear if target non zero val
             if ($val && abs($val-$def) > $eps)
-                doDoubleCon(($uc+".o"), $val, "addDoubleLinear");
-            connectAttr -f .o $trg_plg;
+                $src_plg = doDoubleCon($src_plg, $val, "addDoubleLinear");
+            catchQuiet(`connectAttr -f $src_plg $trg_plg`);
+        }
+        else{
+            $nname = `substitute "\\." $src_plg "_"`;
+            $uc = `createNode -n $nname unitConversion`;
+                setAttr .cf $ucf;
+                connectAttr $src_plg .i;
+                // add addDoubleLinear if target non zero val
+                if ($val && abs($val-$def) > $eps)
+                    doDoubleCon(($uc+".o"), $val, "addDoubleLinear");
+                connectAttr -f .o $trg_plg;
+        }
     }
     print ">\n";
 
@@ -551,6 +602,87 @@ global proc string doUCCon(
 
 }
 
+global proc string mkPlg(string $guess){
+    // returns plug
+    string $plg = $guess;
+    if (!`objExists $plg`){
+        $lssl = `ls -sl`;
+        if (!size($lssl))
+            return "";
+        for ($sel in $lssl){
+            $plg = $sel + "." + $guess;
+            if (`objExists $plg`)
+                break;
+        }
+    }
+    return $plg;
+}
+
+global proc string doUCCon (
+
+        string $src_plg,
+        string $trg_plg, 
+        float $init_val){
+
+    // returns $src_plg of new node to use instead of orignal
+    // will be used after unitConversion
+    $nname = "uc_" + `substitute "\\." $src_plg "_"`;
+    string $node = `createNode -n $nname unitConversion`;
+        setAttr .cf $init_val;
+        connectAttr $src_plg .i;
+    
+    if ($trg_plg != "")
+        connectAttr .o $trg_plg;
+    
+    return ($node + ".o");
+
+
+}
+
+global proc string doRevCon(
+    
+        string $src_plg,
+        string $trg_plg,
+        string $ax
+        ){
+    
+    $bname = $src_plg;
+    if ($trg_plg != "")
+        $bname = $trg_plg;
+    string $ls_at[] = `listAttr $bname`;
+    $nname = stringArrayToString(
+            {"rev", plugNode($bname), $ls_at[0]},
+            "_"
+        );
+    string $node = $nname;
+    if (!`objExists $nname`)
+        $node = `createNode -n $nname reverse`;
+
+    // find input and output attrs
+    $node_at = `listAttr ($node + ".ix")`;
+    $node_at_out = `listAttr ($node + ".ox")`;
+    string $parent_at[] = `ls -st $trg_plg`;
+    if ($ax == "")
+        // if trg_plg is a child of mulity attr
+        if (size($parent_at) && $parent_at[0] == "double3")
+            if (stringArrayContains($ax, {"x", "y", "z"}))
+                $ax = tolower(endString($ls_at[0], 1));
+        else
+            $ax = "x";
+    
+    $node_at = listAttr(`format -s $node -s $ax "^1s.i^2s"`);
+    $node_at_out = listAttr(`format -s $node -s $ax "^1s.o^2s"`);
+    $node_plg = $node + "." + $node_at[0];
+    $node_out_plg = $node + "." + $node_at_out[0];
+    
+    if (!isConnected($src_plg, $node_plg))
+        connectAttr -f $src_plg $node_plg;
+    if ($trg_plg != "")
+        if (!isConnected($node_out_plg, $trg_plg))
+            connectAttr -f $node_out_plg $trg_plg;
+    return $node_out_plg;
+}
+
 global proc conequalize(string $plgA, string $plgB){
 
     $lssl = conSortSelection({}, $plgA, $plgB);
@@ -579,8 +711,10 @@ global proc conequalize(string $plgA, string $plgB){
 
 global proc conDoEqualize(string $src_plg, string $trg_plg){
 
-    $val = `getAttr $src_plg`;
-    setAttr $trg_plg $val;
+    if (`objExists $src_plg`){
+        float $val = `getAttr $src_plg`;
+        setAttr $trg_plg $val;
+    }
 }
 
 global proc string[] conSortSelection(string $lssl[], string $plgA, string $plgB){
@@ -658,4 +792,115 @@ global proc string[] conSortSelection(string $lssl[], string $plgA, string $plgB
     $lssl = $new_sel;
 
     return $new_sel;
+}
+
+global proc int CHECK_CON(string $plgA, string $plgB, float $cf){
+    // plgA - child
+    // plgB - source
+    int $res = 0;
+    if (`isConnected $plgB $plgA`){
+        return 1;
+    }
+    $ls_outpB = `listConnections -s 0 -d 1 $plgB`;
+    if (size($ls_outpB)){
+        // check if it connected to plgA
+        $chk_inpA = `listConnections -s 0 -d 1 $ls_outpB[0]`;
+        for ($nd in $chk_inpA){
+            if ($nd == plugNode($plgA)){
+                $res = 1;
+                break;
+            }
+        }
+        if ($res){
+            // ok its connnected, but check and fix value
+            $ntype = `objectType $ls_outpB[0]`;
+            if ($ntype == "unitConversion"){
+                $plg = $ls_outpB[0]+".cf";
+                if (`getAttr $plg` != $cf){
+                    print "CHK_CON: conversion factor fixed\n";
+                    setAttr  $cf;
+                }
+            }
+        }
+    }
+
+    return $res;
+}
+
+global proc string[] conB2A(string $attrs[]){
+    // returns blendTwoAttr.ba plugs
+    string $items[];
+    int $i;
+    
+    if (!size($attrs))
+        $attrs = `channelBox -q -sma mainChannelBox`;
+    $lssl = `ls -sl`;
+    $srcA = $lssl[0];
+    $srcB = $lssl[1];
+    $trg = $lssl[2];
+    
+    for ($at in $attrs){
+        $srcA_plg = $srcA + "." + $at;
+        $srcB_plg = $srcB + "." + $at;
+        $trg_plg = $trg + "." + $at;
+        if (size(`ls $srcA_plg $srcB_plg $trg_plg`) != 3)
+            continue;
+        $new = doConB2A($srcA_plg, $srcB_plg, $trg_plg, "");
+        $items[$i++] = $new + ".ab";
+    }
+    return $items;
+}
+
+global proc string doConB2A(
+        string $srcA_plg, string $srcB_plg, 
+        string $trg_plg, string $blend_plg){
+    
+    $pfx = "b2a";
+    //$blend_plg = "CTRL_FKIK.fkik"
+    $at = `plugAttr $trg_plg`;
+    $trg = `plugNode $trg_plg`;
+    $noden = `format -s $pfx -s $trg -s $at "^1s_^2s_^3s"`;
+    string $b2a = `createNode -ss -n $noden blendTwoAttr`;
+        connectAttr -f $srcA_plg ($b2a + ".i[0]");
+        connectAttr -f $srcB_plg ($b2a + ".i[1]");
+        connectAttr -f ($b2a + ".o") $trg_plg;
+    if (size(`ls $blend_plg`))
+        connectAttr -f $blend_plg ($b2a + ".ab");
+    return $b2a;
+}
+
+global proc string adlTOmdl(string $adl){
+    
+    $nn = `substitute "adl" $adl "mdl"`;
+    $inp1 = `listConnections -s 1 -d 0 -p 1 ($adl + ".i1")`;
+    $inp2 = `listConnections -s 1 -d 0 -p 1 ($adl + ".i2")`;
+    $outs = `listConnections -d 1 -s 0 -p 1 ($adl + ".o")`;
+    $nnode = `createNode -ss -n $nn multDoubleLinear`;
+        connectAttr $inp1[0] ($nnode + ".i1");
+        connectAttr $inp2[0] ($nnode + ".i2");
+        connectAttr -f ($nnode + ".o") $outs[0];
+    delete $adl;
+    return $nnode;
+}
+
+global proc string doConMDL(string $inp1, string $inp2, string $outp){
+
+    $nn = "mdl_" + `substitute "\\." $outp "_"`;
+    $nnode = `createNode -n $nn multDoubleLinear`;
+    float $val;
+    if (`objExists $inp1`)
+        connectAttr $inp1 ($nnode + ".i1");
+    else{
+        $val = $inp1;
+        setAttr ($nnode + ".i1") $val;
+    }
+    if (`objExists $inp2`)
+        connectAttr $inp2 ($nnode + ".i2");
+    else{
+        $val = $inp2;
+        setAttr ($nnode + ".i2") $val;
+    }
+    if (`objExists $outp`)
+        connectAttr ($nnode + ".o") $outp;
+    return $nnode;
 }

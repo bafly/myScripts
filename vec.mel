@@ -7,12 +7,12 @@
 global proc vector vec(){
 
     global vector $gBaVec, $gBaVecA;
-    string $lssl[] = `ls -sl -type float3`;
-    $comps = `doFindVerts $lssl`;
-    if (size($comps))
-        $gBaVecA = doVec($comps[0], "");
-    if (size($comps) > 1)
-        $gBaVec = doVec($comps[0], $comps[1]);
+
+    string $lssl[] = `ls -fl -sl`;
+    if (size($lssl))
+        $gBaVecA = doVec($lssl[0], "");
+    if (size($lssl) > 1)
+        $gBaVec = doVec($lssl[0], $lssl[1]);
     else
         $gBaVec = $gBaVecA;
 
@@ -277,8 +277,7 @@ global proc matrix floatArrayToMatrix(float $t[]){
 ///////////////            PLANE TOOLS           ///////////////
 
 global proc ext(){
-    
-    global vector $gBaVec;
+
     global vector $gPlane[];
     if (!size($gPlane))
         return;
@@ -286,70 +285,39 @@ global proc ext(){
     vector $P, $P1;
     vector $vecs[];
     $lssl = `ls -sl -fl -type float3`;
-    $comps = `doFindVerts $lssl`;
+    $edgs = `doFindEdges $lssl`;
     vector $all_vec[];
-    //$sel = $comps[0]
+    //$sel = $edgs[0]
     // $P1 = `putOnPlane $vecs[0] $p $gPlane`
     // $P1 = `doPutOnPlane $vecs $gPlane`
-    $p = $gBaVec;
-    for ($sel in $comps){
-        print {"Vtx: " + $sel};
-        $P = `xform -q -ws -t $sel`;
-        // $p = unit($vecs[1] - $vecs[0]);
-        // $verts = doFindVerts({$sel});
-        // $closest_vtx = "";
-        $d = getDistanceToPlane($P, $p, $gPlane);
-        $P1 = $P - ($p * $d);
-        print {" Moving Vertex: " + $sel};
-        print {"  To: " + $P1};
-        move -ws ($P1.x) ($P1.y) ($P1.z) $sel;
-    }
-}
-//$plane = $gPlane
-global proc extedg(){
-    
-    global vector $gPlane[];
-    
-    $lssl = `ls -sl`;
-    $comps = `doFindEdges $lssl`;
-    for ($sel in $comps){
-        doExtEdge($sel, $gPlane);
-    }
-}
-global proc 
-vector doExtEdge(string $sel, vector $plane[]){
-    // $lssl = `ls -sl`;
-    // $sel = $lssl[0]
-    vector $vecs[];
-    $verts = doFindVerts({$sel});
-    vector $A = `xform -q -ws -t $verts[0]`;
-    vector $B = `xform -q -ws -t $verts[1]`;
-    $p = unit($B - $A);
-    $vecs[0] = $A;
-    $vecs[1] = $B;
-    
-    // $closest_vtx = "";
-    $dist = 0.0;
-    float $dists[];
-    $j = 0;
-    // find max distnace to exclude
-    for ($i=0; $i<size($verts); $i++){
-        $P = $vecs[$i];
-        $d = getDistanceToPlane($P, $p, $plane);
-        $dists[$i] = $d;
-        if (abs($d) > $dist){
-            $dist = abs($d);
-            $j = $i;
+    for ($sel in $edgs){
+        print {"Edge: " + $sel};
+        $vecs = `xform -q -ws -t $sel`;
+        $p = unit($vecs[1] - $vecs[0]);
+        
+        $verts = doFindVerts({$sel});
+        $closest_vtx = "";
+        $dist = 0.0;
+        float $dists[];
+        $j = 0;
+        // find max distnace to exclude
+        for ($i=0; $i<size($vecs); $i++){
+            $P = $vecs[$i];
+            $d = getDistanceToPlane($P, $p, $gPlane);
+            $dists[$i] = $d;
+            if ($d > $dist){
+                $dist = $d;
+                $j = $i;
+            }
         }
+        $vtx = $verts[!$j];
+        $P = $vecs[!$j];
+        $d = $dists[!$j];
+        $P1 = $P - ($p * $d);
+        print {" Moving Vertex: " + $vtx};
+        print {"  To: " + $P1};
+        move -ws ($P1.x) ($P1.y) ($P1.z) $vtx;
     }
-    $vtx = $verts[!$j];
-    $P = $vecs[!$j];
-    $d = $dists[!$j];
-    $P1 = $P - ($p * $d);
-    print {" Moving Vertex: " + $vtx};
-    print {"  To: " + $P1};
-    move -ws ($P1.x) ($P1.y) ($P1.z) $vtx;
-    return $P1;
 }
 
 global proc vector[] vecplane(){
@@ -357,15 +325,14 @@ global proc vector[] vecplane(){
     global vector $gPlane[];
     // if (size($gPlane))
     $ls_pts = `ls -fl -sl -type float3`;
-    $comps = `doFindEdges $ls_pts`;
-    while (size($comps) > 2)
-        stringArrayRemoveAtIndex(0, $comps);
-    $verts = stringArrayRemoveDuplicates(`doFindVerts $comps`);
-    if (size($verts) > 3)
-        stringArrayRemoveAtIndex(0, $verts);
+    if (size($ls_pts) && size($ls_pts) == 3){
     
-    if (size($verts) == 3){
-        $gPlane = `xform -q -ws -t $verts`;
+        vector $O = `xform -q -ws -t $ls_pts[0]`;
+        vector $A = `xform -q -ws -t $ls_pts[1]`;
+        vector $B = `xform -q -ws -t $ls_pts[2]`;
+        $gPlane[0] = $O;
+        $gPlane[1] = $A;
+        $gPlane[2] = $B;
     }
     return $gPlane;
 }
@@ -541,4 +508,24 @@ global proc string doVecJnt(vector $pos, string $name){
     else
         $name = `joint -n $name -p ($pos.x) ($pos.y) ($pos.z)`;
     return $name;
+}
+
+////////////////////////////////////////////////////////////////
+///////////////            OTHER TOOLS           ///////////////
+
+global proc vector getManipPos(){
+    
+    vector $pos;
+    string $manip = `currentCtx`;
+    
+    if ($manip != ""){
+        $typ = `match "^[a-zA-Z][a-z]+" $manip`;
+        $part2 = toupper(startString($typ, 1)) + endString($typ, size($typ)-1);
+        // vector $pos = `manipMoveContext -q -p $part2`;
+        $tool = `format -s $part2 "manip^1sContext"`;
+        $eval = `format -s $tool -s $part2 "^1s -q -p ^2s"`;
+        $pos = eval($eval);
+    }
+
+    return $pos;
 }
