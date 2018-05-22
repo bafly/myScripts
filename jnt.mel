@@ -3,6 +3,7 @@ global proc string jnt(){
     int $mp_sz = 1;
     int $i = 0;
     float $multpos[];
+    vector $rot = <<0,0,0>>;
     vector $pos = <<0,0,0>>;
     vector $curpos = <<0,0,0>>;
     vector $sum;
@@ -26,6 +27,10 @@ global proc string jnt(){
     else if (size($lssl)){
         print "\n...tr\n";
         $mp_sz = size($lssl);
+        if (size($lssl)==1){
+            $rot = `xform -q -ws -ro $lssl[0]`;
+        }
+            
         for ($sel in $lssl){
             print $pos;
             $pos += `xform -q -ws -rp $sel`;
@@ -37,6 +42,7 @@ global proc string jnt(){
     select -cl;
     $sum = $pos/$mp_sz;
     $jnt = `joint -n "joint#" -p ($sum.x) ($sum.y) ($sum.z)`;
+    xform -ws -ro ($rot.x) ($rot.y) ($rot.z) $jnt;
 
     //parent -w $jnt;
     hilite $lshl;

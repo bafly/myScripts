@@ -1,3 +1,4 @@
+// v0.2a new getratio()
 // v0.2  new putonplane()
 // v0.1  new putonvec()
 
@@ -27,7 +28,13 @@ global proc vecmove(int $inv){
 
     move -r ($gBaVec.x * $inv) ($gBaVec.y * $inv) ($gBaVec.z * $inv);
 }
+global proc vecmoveto(vector $inv){
+    global vector $gBaVec;
+    if (!$gBaVec)
+        vec();
 
+    move ($gBaVec.x * $inv.x) ($gBaVec.y * $inv.y) ($gBaVec.z * $inv.z);
+}
 global proc doVecMove(string $lssl[]){
 
     global vector $gBaVec;
@@ -173,6 +180,32 @@ global proc vector projectOnVec(vector $C, vector $vec, vector $A){
     return $C1;
 }
 
+global proc float getratio(){
+    // returns(float), value(ratio) between two targets
+    //   according to distance
+    // select only 3 items: trgA, trgB and child
+    $lssl = `ls -fl -sl`;
+    if (size($lssl) != 3)
+        return -1;
+    $trgA = $lssl[0];
+    $trgB = $lssl[1];
+    $chld = $lssl[2];
+
+    vector $A = `xform -q -ws -t $trgA`;
+    vector $B = `xform -q -ws -t $trgB`;
+    vector $C = `xform -q -ws -t $chld`;
+    $AC = $C - $A;
+    $BC = $C - $B;
+    // print $AC;
+    // print $BC;
+    float $a = mag($AC);
+    float $b = mag($BC);
+    float $sum = $a + $b;
+    float $ratio = $a / $sum;
+    print {$ratio};
+    return $ratio;
+}
+
 ////////////////////////////////////////////////////////////////
 ///////////////           MATRIX TOOLS           ///////////////
 
@@ -285,7 +318,7 @@ global proc ext(){
     vector $P, $P1;
     vector $vecs[];
     $lssl = `ls -sl -fl -type float3`;
-    $edgs = `doFindEdges $lssl`;
+    string $edgs[] = `doFindEdges $lssl`;
     vector $all_vec[];
     //$sel = $edgs[0]
     // $P1 = `putOnPlane $vecs[0] $p $gPlane`
@@ -512,6 +545,11 @@ global proc string doVecJnt(vector $pos, string $name){
 
 ////////////////////////////////////////////////////////////////
 ///////////////            OTHER TOOLS           ///////////////
+global proc vector vecmanip(){
+    global vector $gBaVec;
+    $gBaVec = `getManipPos`;
+    return $gBaVec;
+}
 
 global proc vector getManipPos(){
     
