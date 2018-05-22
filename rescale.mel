@@ -1,0 +1,27 @@
+global proc rescale(){
+    $lssl = `ls -sl`;
+    vector $vec = <<1, 1, 1>>;
+    for ($sel in $lssl)
+        doRescale($sel, $vec);
+}
+
+global proc doRescale(string $root, vector $S){
+    
+    vector $R = `getAttr ($root + ".s")`;
+    vector $m_scl = <<($S.x * $R.x), ($S.y * $R.y), ($S.z * $R.z)>>;
+    print "overall_scale:\n";
+    print $m_scl;
+    scale -pcp 1 1 1 $root;
+    
+    vector $pos, $fix_pos;
+    $ls_child = `listRelatives -type transform -c $root`;
+    for ($ch in $ls_child){
+        $pos = `getAttr ($ch + ".t")`;
+        // fix pos
+        $fix_pos = <<($pos.x * $m_scl.x), ($pos.y * $m_scl.y), ($pos.z * $m_scl.z)>>;
+        print "m_scale:\n";
+        print $m_scl;
+        doRescale($ch, $m_scl);
+    }
+    
+}

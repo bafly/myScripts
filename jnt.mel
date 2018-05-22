@@ -1,0 +1,45 @@
+global proc string jnt(){
+
+    int $mp_sz = 1;
+    int $i = 0;
+    float $multpos[];
+    vector $pos = <<0,0,0>>;
+    vector $curpos = <<0,0,0>>;
+    vector $sum;
+    
+    $lssl = `ls -sl -fl`;
+    $lshl = `ls -hl`;
+    
+    if (size($lshl)){
+        $multpos = `xform -q -ws -t`;
+        $mp_sz = size($multpos)/3;
+        
+        for ($i=0; $i<size($multpos); $i+=3){
+            print $i;
+            print "\n";
+            $curpos = <<$multpos[$i], 
+                        $multpos[$i+1], 
+                        $multpos[$i+2]>>;
+            $pos+=$curpos;
+        }
+    }
+    else if (size($lssl)){
+        print "\n...tr\n";
+        $mp_sz = size($lssl);
+        for ($sel in $lssl){
+            print $pos;
+            $pos += `xform -q -ws -rp $sel`;
+            print "..before\n";
+            print $pos;
+            print "..after\n";
+        }
+    }
+    select -cl;
+    $sum = $pos/$mp_sz;
+    $jnt = `joint -n "joint#" -p ($sum.x) ($sum.y) ($sum.z)`;
+
+    //parent -w $jnt;
+    hilite $lshl;
+    select $lssl;
+    return $jnt;
+}

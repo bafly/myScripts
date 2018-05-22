@@ -1,0 +1,75 @@
+//v0.1b new:    renchi
+//v0.1a detect obj types in heararchy mdoe
+//v0.1a fix renaming childs
+global proc ren(){
+    string $sel[];
+    string $pfx[]={"_jnt","_crv","_ctrl","_grp"};
+    string $tkz[]; //buffer tokenize
+    string $lssl[]=`ls -sl`;
+    string $ob = $lssl[0];
+    string $new, $baseName, $bname;
+    if (size(`ls -sl`)==1){ // its for hierarchy, e.g joints chain
+        $wat = `confirmDialog -m "youre selecting one obj! if so im gonna rename all the hierarchy staff!"`;
+        if ($wat!= "Confirm")
+            return;
+        if (objectType("-i", "joint", (`ls -sl`))){
+            if (!`endsWith $ob "jnt"`){
+                $baseName = `match "[^|]+$" ($ob+$pfx[0])`;
+                print $baseName;
+                $ob = `rename $ob $baseName`;
+            }
+            $sel = `ls -dag -sl -typ joint`;
+        }
+        else
+            $sel = `ls -dag -ap -sl -l`;
+    }
+    else
+        $sel = `ls -ap -sl -l`; // for selected objs
+    //$sizeTkz = `tokenize $ob "|" $tkz`; // token size for cutout 1st objs realName
+    //$baseName = $tkz[$sizeTkz-1]; // here we are - objs real name!
+    $baseNmae = `match "[^|]+$" $ob`;
+    $bname = `match "[^0-9]+" $baseName`; // check for iterations
+    $getIter = `match "[0-9]+$" $baseName`;
+    int $i = 0;
+    if (size($getIter))
+        $i = $getIter;
+    for ($i=1; $i<=(size($sel));$i++){
+        $iter = size($sel)+1-$i;
+        $new = `rename -is $sel[size($sel)-$i] ($bname+$iter)`;
+        $normalName = `match "[^|]+$" $new`;
+        print $normalName;
+        $ls_shp = `listRelatives -f -s $new`;
+        if (size($ls_shp)){
+            $ctrlName = substitute("_jnt",$normalName,"_ctrl");
+            print ("ctrl name: "+$ctrlName+"\n");
+            $c = 1;
+            for ($shp in $ls_shp){
+                rename $shp ($ctrlName+"Shape"+$c);
+                $c++;
+            }
+        }
+    }
+}
+
+global proc string[] renchi(string $pre, string $post){
+    $pre = $pre != "" ? ($pre + "_") : "";
+    $post = $post != "" ? ("_" + $post) : "";
+    string $lssl[] = `ls -sl`;
+    string $renamed[];
+    int $r;
+    for ($sel in $lssl){
+        $bn = `match "[^|]+$" $sel`;
+        $ls_child = `listRelatives -f -c -type "transform" $sel`;
+        int $c;
+        for ($ch in $ls_child){
+            $idx = $c ? $c : "";
+            $ch_n = `format -s $pre -s $bn 
+                            -s $idx -s $post
+                            "^1s^2s^3s^4s"`;
+            if ($ch != $ch_n)
+                $renamed[$r++] = `rename $ch $ch_n`;
+            $c++;
+        }
+    }
+    return $renamed;
+}
