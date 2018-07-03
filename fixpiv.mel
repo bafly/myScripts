@@ -1,0 +1,143 @@
+//v0.1b  upd    fixpiv(); resotres position only
+//       new    ztp(); resets pivot by parent's sapace
+//v0.1a  upd    matchpiv(); matching world space values and pivots
+
+// TODO
+//          if has inmesh/create do offset
+
+
+// for pivToManip
+source vec;
+
+global proc fixpiv(){
+
+    $lssl = `ls -sl`;
+
+    for ($sel in $lssl){
+
+        doFixPiv($sel);
+    }
+}
+
+global proc doFixPiv(string $sel){
+    // restores object space position 
+    //  from pivots world position
+    //  e.g after freeze transformation
+    vector $a;
+    vector $b;
+    $a = `xform -q -ws -rp $sel`;
+    // $b = `xform -q -ws -ro $sel`;
+
+    xform -ztp $sel;
+    move -ws -pgp -pcp ($a.x) ($a.y) ($a.z) $sel;
+    // rotate -ws -pgp -pcp ($a.x) ($a.y) ($a.z) $sel;
+
+    ////////// reset tg //////////////
+    string $ls_shp[] = `listRelatives -s $sel`;
+    for ($shp in $ls_shp){
+        resetTransformGeometry($shp);
+    }
+
+}
+
+global proc resetTransformGeometry(string $sel){
+    
+    $ls_con = `listConnections -s 1 -d 0 ($sel + ".c")`;
+    if (size($ls_con) && `objectType -i "nurbsCurve" $sel`){
+        if (size(`ls -type "transformGeometry" $ls_con[0]`))
+            setAttr -type "matrix" 
+                    ($ls_con[0]+ ".txf") 1 0 0 0 
+                                         0 1 0 0 
+                                         0 0 1 0 
+                                         0 0 0 1;
+    }
+}
+
+global proc doFixPiv_(string $sel){
+
+    vector $a = `xform -q -ws -rp $sel`;
+    xform -ztp $sel;
+    move -ws -pgp -pcp ($a.x) ($a.y) ($a.z) $sel;
+
+    // reset tg
+    string $ls_shp[] = `listRelatives -s $sel`;
+    /*$ls_tg = `listConnections -s 1 
+                              -d 0 
+                              -type "transformGeometry" 
+                              $ls_shp[0]`;*/
+    $ls_con = `listConnections -s 1 -d 0 ($ls_shp[0]+".c")`;
+    if (size($ls_con) && `objectType -i "nurbsCurve" $ls_shp[0]`){
+        if (size(`ls -type "transformGeometry" $ls_con[0]`))
+            setAttr -type "matrix" 
+                    ($ls_con[0]+ ".txf") 1 0 0 0 
+                                         0 1 0 0 
+                                         0 0 1 0 
+                                         0 0 0 1;
+        //else
+        //    move
+    }
+
+}
+
+global proc ztp(){
+    for ($sel in `ls -sl`){
+        doZeroTransformPivot($sel);
+    }
+}
+
+global proc doZeroTransformPivot(string $sel){
+    // resets pivot according to its parent space
+    // if transform with shapes is in scene's root -
+    //  its pivot placed and oriented in origin
+    vector $a;
+    vector $b;
+    $ls_par = `listRelatives -f -p $sel`;
+    
+    if (size($ls_par)){
+        $a = `xform -q -ws -rp $ls_par[0]`;
+        $b = `xform -q -ws -ro $ls_par[0]`;
+    }
+    xform -ztp $sel;
+    move -ws -pgp -pcp ($a.x) ($a.y) ($a.z) $sel;
+    rotate -ws -pgp -pcp ($a.x) ($a.y) ($a.z) $sel;
+}
+
+global proc matchpiv(){
+    
+    $lssl = `ls -sl`;
+    $src = $lssl[size($lssl)-1];
+    $piv = `xform -q -ws -piv $src`;
+    $ori_piv = `xform -q -ws -ro $src`;
+    for ($s=0; $s<size($lssl)-1; $s++){
+        $trg = $lssl[$s];
+        doMatchPiv $trg $piv $ori_piv;
+        $ls_par = `listRelatives -p $trg`;
+        if (size($ls_par) && $ls_par[0] == $src)
+            makeIdentity -a 1 -t 1 -r 1 -s 1 $trg;
+    }
+}
+
+global proc doMatchPiv(string $sel, float $m[], float $n[]){
+
+    move -ws -pcp
+        $m[0]  $m[1]  $m[2]
+        $sel
+        ;
+    rotate -ws -pcp
+        $n[0]  $n[1]  $n[2]
+        $sel
+        ;
+    xform -ws -piv 
+        $m[0]  $m[1]  $m[2]
+        $sel
+        ;
+}
+
+global proc pivToManip(){
+
+    string $lssl[] = `ls -hl`;
+    if (!size($lssl))
+        $lssl = `ls -sl`;
+    vector $pos = getManipPos();    // using vec.mel
+    xform -ws -piv ($pos.x) ($pos.y) ($pos.z) $lssl[0];
+}

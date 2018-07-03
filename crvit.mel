@@ -1,0 +1,51 @@
+global proc string crvit(int $connect){
+    // print
+    $lssl = `ls -sl -tr`;
+    vector $v;
+    vector $vecs[];
+    int $i;
+    for ($sel in $lssl)
+        $vecs[$i++] = `xform -q -ws -rp $sel`;
+    
+    $crv = doCurveIt($vecs);
+    if ($connect)
+        doPinCurvePoints($crv, lssl);
+    print $vecs;
+    return $crv;
+}
+
+global proc string doCurveIt(vector $points[]){
+    vector $v;
+    int $deg = 1;
+    string $base_cmd = `format -s $deg "curve -d ^1s"`;
+    string $knot_cmd = "";
+    for ($i=0; $i<size($points); $i++){
+        $v = $points[$i];
+        $x = $v.x;
+        $y = $v.y;
+        $z = $v.z;
+        $base_cmd += `format -s $x -s $y -s $z " -p ^1s ^2s ^3s"`;
+        $knot_cmd += `format -s $i " -k ^1s"`;
+    }
+    $cmd = $base_cmd + $knot_cmd;
+    string $crv = eval($cmd);
+    return $crv;
+}
+
+global proc string[] doPinCurvePoints(string $crv, string $lssl[]){
+    // connect point(e.g: curve1.p[0]) to transform(e.g: group1)
+    // Returns(string[]): created decompose matrices
+    int $i;
+    string $items[];
+    for ($sel in $lssl){
+        $crv_pt = `format -s $crv -s $i "^1s.cp[^2s]"`;
+        $demat_n = `format -s $sel "dm_^1s_pincp"`;
+        $demat = `createNode -n $demat_n decomposeMatrix`;
+        $items[$i++] = $demat;
+        connectAttr ($sel + ".wm") ($demat + ".imat");
+        connectAttr ($demat + ".ot") $crv_pt;
+    }
+    return $items;
+}
+
+//curve -d 1 -p 1589.296051 0 -6338.160885 -p 1449.289485 0 -6607.079806 -p 1259.462503 0 -6441.154978 -p 1072.11465 0 -6630.573246 -k 0 -k 1 -k 2 -k 3 ;
