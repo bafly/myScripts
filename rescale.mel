@@ -1,27 +1,44 @@
-global proc rescale(){
-    $lssl = `ls -sl`;
-    vector $vec = <<1, 1, 1>>;
-    for ($sel in $lssl)
-        doRescale($sel, $vec);
+//v0.1a
+// recursive
+
+global proc string[] doRescale(
+        string $sel,
+        float $scale[],
+        float $shear[]
+        ){
+    // starts from child, get its world scale value
+    string $ls_chld[1];
+    float $ws_scale[3];
+    print {"> " + $sel};
+    
+    $ls_chld = `listRelatives -c -f -type transform $sel`;
+    string $items[] = {$sel};
+    for ($ch in $ls_chld)
+        $items = stringArrayCatenate(
+            $items,
+            doRescale($ch, $scale, $shear));
+    
+    $ws_scale = `xform -q -ws -s $sel`;
+    $rescale = {$scale[0]/$ws_scale[0],
+                $scale[1]/$ws_scale[1],
+                $scale[2]/$ws_scale[2]};
+    // scale -pcp $ws_scale[0] $ws_scale[1] $ws_scale[2] $sel;
+    scale -pcp $rescale[0] $rescale[1] $rescale[2] $sel;
+    setAttr ($sel + ".sh") $shear[0] $shear[1] $shear[2];
+    print {": " + $sel};
+    return $items;
 }
 
-global proc doRescale(string $root, vector $S){
-    
-    vector $R = `getAttr ($root + ".s")`;
-    vector $m_scl = <<($S.x * $R.x), ($S.y * $R.y), ($S.z * $R.z)>>;
-    print "overall_scale:\n";
-    print $m_scl;
-    scale -pcp 1 1 1 $root;
-    
-    vector $pos, $fix_pos;
-    $ls_child = `listRelatives -type transform -c $root`;
-    for ($ch in $ls_child){
-        $pos = `getAttr ($ch + ".t")`;
-        // fix pos
-        $fix_pos = <<($pos.x * $m_scl.x), ($pos.y * $m_scl.y), ($pos.z * $m_scl.z)>>;
-        print "m_scale:\n";
-        print $m_scl;
-        doRescale($ch, $m_scl);
+global proc rescale(){
+    // select roots // different groups
+    string $unscale[];
+    float $scale[3] = {1, 1, 1};
+    float $shear[3] = {0, 0, 0};
+    $lssl = `ls -sl`;
+
+    for ($root in $lssl){
+        $unscale = doRescale($root, $scale, $shear);
+        for ($un in $unscale)
+            scale -pcp $scale[0] $scale[1] $scale[2] $un;
     }
-    
 }

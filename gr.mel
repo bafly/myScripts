@@ -1,0 +1,397 @@
+//v0.1a
+
+global proc grp(){
+    //grouping and matching to last selected transform
+    //select items to group, then select item with 
+    //  position and orientation needs to match
+    $lssl = `ls -sl -tr`;
+    $sz = size($lssl);
+    $src = $lssl[$sz-1];
+    $root = `listRelatives -f -p $lssl[0]`;
+    vector $pos = `xform -q -ws -rp $src`;
+    vector $rot = `xform -q -ws -ro $src`;
+    stringArrayRemoveAtIndex($sz-1, $lssl);
+    
+    $grp = `group -em`;
+    if (size($root))
+        parent $grp $root;
+    move -ws ($pos.x) ($pos.y) ($pos.z) $grp;
+    rotate -ws ($rot.x) ($rot.y) ($rot.z) $grp;
+    parent $lssl $grp;
+    select $grp;
+}
+
+global proc makeParentNode( string $node, string $nodeType ){
+
+    string $sfx;
+
+    $grp = `group -em`;  //del
+    $par = `listRelatives -p $node`;
+    $nname = `match "[^|]+$" $node`;
+
+    switch ($nodeType){
+        case "locator":
+            $sfx = "_loc";
+            $shp = `createNode -n ($nname+$sfx+"Shape") -p $grp $nodeType`;
+            break;
+        case "joint":
+            $grp = `createNode joint`;
+            $sfx = "_jnt";
+            break;
+        case "transform":
+            $sfx = "_grp";
+            // rename if already exists pgrp
+            if (gmatch((string) $par[0], "*_grp"))
+                $sfx = "_offset";
+            break;
+        default:
+            $sfx = "_null#";
+            break;
+    }
+    
+    $grp = `rename $grp ($node + $sfx)`; //del
+    
+    // get parent for grp
+    if (size($par)){
+        
+        //print "\n";
+        parent $grp $par[0];
+    }
+
+
+    // for shape from joint extraction
+    //$sel = `rename $sel ($ns+":"+$sel)`;
+    
+    // if joint do complex
+    if (`objectType -isa joint $node`){
+
+        vector $pos = `xform -q -ws -rp $node`;
+        vector $rot = `xform -q -ws -ro $node`;
+        xform -ws -t ($pos.x) ($pos.y) ($pos.z);
+        xform -ws -ro ($rot.x) ($rot.y) ($rot.z);
+    }
+    else{
+        $data_grp = `duplicate -po $node`;
+        // relocate grp
+        copyAttr -v $data_grp $grp;
+        delete $data_grp;
+    }
+}
+
+global proc string[] gr(){
+
+    // -1 - user pormpt
+    // 1 - _sufx
+    // 0 - prfx_
+    int $IS_SUFX = -1;
+    string $items[];
+
+    // ask type
+    $wat = `promptDialog 
+        -t "Select type of tag" 
+        -m "\r0:\tprefix_\n\r1:\t_sufix"
+        -tx "0"`;
+    if ($wat == "dismiss")
+        print "watt";
+    
+    $IS_SUFX = int(`promptDialog -q -tx`);
+    int $g;
+
+    $lssl = `ls -sl`;
+    for ($sel in $lssl){
+        
+        $grp = doGr($sel, "-grp", $IS_SUFX, 1);
+        $items[$g++] = $grp;
+    }
+    
+    // place result to set
+    $set_name = "_newsSet";
+    if (!`objExists $set_name`)
+        sets -em -n $set_name;
+    sets -add $set_name $items;
+    
+    select $lssl;
+    return $items;
+}
+
+global proc string[] simplegrp(string $lssl[], string $pfx, string $sfx){
+
+    string $items[];
+    int $i;
+    for ($sel in $lssl){
+        // get base name
+        $bname = `match "[^|]+$" $sel`;
+        $bname = `substitute ":" $bname "__"`;
+        string $rnm = $pfx + $bname + $sfx;
+        $grp = `group -em`;
+        $grp = `rename $grp $rnm`;
+        $items[$i++] = $grp;
+        // for shape from joint extraction
+        //$sel = `rename $sel ($ns+":"+$sel)`;
+        
+        // if joint do complex
+        if (`objectType -isa joint $sel`){
+
+            vector $pos = `xform -q -ws -rp $sel`;
+            vector $rot = `xform -q -ws -ro $sel`;
+            xform -ws -t ($pos.x) ($pos.y) ($pos.z);
+            xform -ws -ro ($rot.x) ($rot.y) ($rot.z);
+        }
+        else{
+            $data_grp = `duplicate -po $sel`;
+            // relocate grp
+            copyAttr -v $data_grp $grp;
+            delete $data_grp;
+        }
+    }
+    return $items;
+}
+
+global proc string doGr( string $sel, string $gtype, int $IS_SUFX, int $dopar){
+    
+    // $IS_SUFX = 0 - grp_ (prefix)
+    // $IS_SUFX = 1 - _grp
+    // string $sel;
+    // int $dopar; - if need to be parented as group
+    string $grp;
+    string $items[];
+    int $t;
+    
+
+    string $sfx = "_grp";
+    string $pfx = "grp_";
+    // int $IS_SUFX = 1;
+
+    string $bname, $sel_name, $rep, $pat;
+    
+    $sel_name = `match "[^|]+$" $sel`;
+    switch ($gtype){
+        case "-grp":
+            $grp = `group -em`;
+            break;
+        case "-loc":
+            $sfx = "_loc";
+            $pfx = "loc_";
+            $loc = `spaceLocator`;
+            $grp = $loc[0];
+            break;
+        default:
+            $pfx = $gtype + "_";
+            $sfx = "_" + $gtype;
+            $grp = `group -em`;
+            break; 
+    }
+    
+    if ($IS_SUFX < 0){
+        $wat = `promptDialog 
+            -t "Select type of tag" 
+            -m "\r0:\tprefix_\n\r1:\t_sufix"
+            -tx "0"`;
+        if ($wat == "dismiss")
+            print "watt";
+        $IS_SUFX = int(`promptDialog -q -tx`);
+    }
+
+    // get parent for grp
+    if ($dopar){
+        $par = `listRelatives -p $sel`;
+        if (size($par)){
+            // rename if already exists pgrp
+            if (gmatch((string) $par[0], "*_grp"))
+                $sfx = "_offset";
+            //print "\n";
+            parent $grp $par;
+        }
+    }
+
+    // get base name
+    $cur_sfx = `match "_[^_]+$" $sel_name`;
+    $cur_pfx = `match "^.[^_]+_" $sel_name`;
+    $pat = $IS_SUFX ? $cur_sfx : $cur_pfx;
+    $bname = `substitute $pat $sel_name ""`;
+
+    // prepare new name
+    $rep = $IS_SUFX ? $sfx : $pfx;
+    //$rnm = `substitute $pat $sel_name $rep`;
+    $rnm = $IS_SUFX ? $bname + $sfx : $pfx + $bname;
+                
+        //$rnm = `substitute "^.[^_]+_" $sel_name $pfx`; // no use 
+
+        //$rnm = `substitute "^.[^_]+_" $sel_name $pfx`;
+        
+    $grp = `rename $grp $rnm`;
+
+    // for shape from joint extraction
+    //$sel = `rename $sel ($ns+":"+$sel)`;
+    
+    // if joint do complex
+    if (`objectType -isa joint $sel`){
+
+        vector $pos = `xform -q -ws -rp $sel`;
+        vector $rot = `xform -q -ws -ro $sel`;
+        xform -ws -t ($pos.x) ($pos.y) ($pos.z);
+        xform -ws -ro ($rot.x) ($rot.y) ($rot.z);
+    }
+    else{
+        $data_grp = `duplicate -po $sel`;
+        // relocate grp
+        copyAttr -v $data_grp $grp;
+        delete $data_grp;
+    }
+    
+    
+    /*
+    // shape migrations
+    $ls_shp = `listRelatives -s $sel`;
+    for ($shp in $ls_shp){
+        parent -r -s $shp $grp;
+    }
+    */
+
+    if ($dopar)
+        parent $sel $grp;
+        
+    return $grp;
+    /*
+    {
+        // carantine old geoms
+        // get geom grp
+        $ls_grp = `ls -sl`;
+        // find geoms in it
+        $lssl = `listRelatives -c $ls_grp`;
+        $tmp_ns = "_oldg";
+        if (!`namespace -ex $tmp_ns`)
+            namespace -add $tmp_ns;
+        string $refs[];
+        int $r;
+        for ($sel in $lssl){
+
+            $lsref = `ls -rn -r $sel`;
+            print $lsref;
+            if (!size($lsref)){
+                print (`format -s $sel "\n  Wrong name: ^1s\n"`);
+                continue;
+            }
+            else if (size($lsref) > 1){
+                print (`format -s $sel "\n  More than one name found: ^1s\n"`);
+                continue;
+            }
+            $refs[$r++] = $lsref[0];
+            rename $sel ($tmp_ns+":"+$sel);
+            
+        }
+        print $refs;        
+        
+    }
+    */
+    /*
+    // parcons
+    int $p;
+    string $pcons[];
+    for ($sel in $lssl){
+        
+        $pcon = `parentConstraint globalSpace CTRL_sawBlade $sel`;
+        $pcons[$p++] = $pcon;
+        
+    }
+    print $pcons;
+    */
+    // print $lssl;
+
+}
+
+global proc string _doGr(string $sel, int $isLoc){
+
+    string $locShp;
+    string $sfx = "_grp";
+    string $pfx = "grp_";
+
+    $sel_name = `match "[^|]+$" $sel`;
+    $grp = `group -em`;
+    
+    // get parent for grp
+    $par = `listRelatives -p $sel`;
+
+    if (size($par)){
+        // rename if already exists pgrp
+        if (gmatch((string) $par[0], "*_grp"))
+            $sfx = "_offset";
+        //print "\n";
+        parent -r $grp $sel;
+        parent $grp $par;
+    }
+        
+    if ($isLoc){
+        $sfx = "_loc";
+        $locShp = `createNode -n ($grp + "Shape") -p $grp locator`;
+    }
+    $grp = `rename $grp ($sel_name + $sfx)`;
+
+    // for shape from joint extraction
+    //$sel = `rename $sel ($ns+":"+$sel)`;
+    
+    // if joint do complex
+    if (`objectType -isa joint $sel`){
+        /*
+        vector $pos = `xform -q -ws -rp $sel`;
+        vector $rot = `xform -q -ws -ro $sel`;
+        xform -ws -t ($pos.x) ($pos.y) ($pos.z);
+        xform -ws -ro ($rot.x) ($rot.y) ($rot.z);
+        */
+        setAttr ($sel + ".r") 0 0 0;
+        setAttr ($sel + ".jo") 0 0 0;
+        if ($isLoc){
+            connectAttr ($sel + ".radi") ($grp + ".lsx");
+            connectAttr ($sel + ".radi") ($grp + ".lsy");
+            connectAttr ($sel + ".radi") ($grp + ".lsz");
+        }
+    }
+    
+    /*
+    // shape migrations
+    $ls_shp = `listRelatives -s $sel`;
+    for ($shp in $ls_shp){
+        parent -r -s $shp $grp;
+    }
+    */
+
+    
+    parent $sel $grp;
+
+    return $grp;
+
+}
+
+global proc string[] loc(){
+
+    // -1 - user pormpt
+    // 1 - _sufx
+    // 0 - prfx_
+    int $IS_SUFX = -1;
+    string $items[];
+
+    // ask type
+    $wat = `promptDialog 
+        -t "Select type of tag" 
+        -m "\r0:\tprefix_\n\r1:\t_sufix"
+        -tx "0"`;
+    if ($wat == "dismiss")
+        print "watt";
+    $IS_SUFX = int(`promptDialog -q -tx`);
+    int $g;
+
+    $lssl = `ls -sl`;
+    for ($sel in $lssl){
+        
+        $grp = doGr($sel, "-loc", $IS_SUFX, 1);
+        $items[$g++] = $grp;
+    }
+    
+    // place result to set
+    $set_name = "_newsSet";
+    if (!`objExists $set_name`)
+        sets -em -n $set_name;
+    sets -add $set_name $items;
+    
+    return $items;
+}
