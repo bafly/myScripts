@@ -1,0 +1,39 @@
+//v0.1a
+
+global proc savepar(){
+    $at = "parentInfo";
+    for ($sel in `ls -sl`){
+        $ls_par = `listRelatives -p -f $sel`;
+        if (!size($ls_par))
+            contninue;
+        $plg = $sel + "." + $at;
+        if (!`objExists $plg`)
+            addAttr -dt "string" -ln $at $sel;
+        setAttr -typ "string" $plg $ls_par[0];
+    }
+}
+
+global proc repar(){
+    $at = "parentInfo";
+    string $sel;
+    for ($sel in `ls -sl`){
+        $plg = $sel + "." + $at;
+        if (!`objExists $plg`){
+            print {" parentInfo not exist: " + $sel};
+            continue;
+        }
+        // setAttr -typ "string" $plg $ls_par[0];
+        $par = `getAttr $plg`;
+        if (!`objExists $par`){
+            print {" parent not exist: \n:" + $par};
+            continue;
+        }
+        $ls_cur_par = `listRelatives -f -p $sel`;
+        if (size($ls_cur_par)){
+            if ($ls_cur_par[0] == $par)
+                print {" already there: \n:" + $sel};
+                continue;
+        }
+        parent $sel $par;
+    }
+}

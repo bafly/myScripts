@@ -1,3 +1,5 @@
+print {"v0.1c"};
+//v0.1c  upd    matchpiv(); fixed shifting shapes
 //v0.1b  upd    fixpiv(); resotres position only
 //       new    ztp(); resets pivot by parent's sapace
 //v0.1a  upd    matchpiv(); matching world space values and pivots
@@ -119,16 +121,16 @@ global proc matchpiv(){
 
 global proc doMatchPiv(string $sel, float $m[], float $n[]){
 
-    move -ws -pcp
+    move -ws -pcp -pgp
         $m[0]  $m[1]  $m[2]
-        $sel
-        ;
-    rotate -ws -pcp
-        $n[0]  $n[1]  $n[2]
         $sel
         ;
     xform -ws -piv 
         $m[0]  $m[1]  $m[2]
+        $sel
+        ;
+    rotate -ws -pcp -pgp
+        $n[0]  $n[1]  $n[2]
         $sel
         ;
 }

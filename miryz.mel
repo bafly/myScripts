@@ -1,0 +1,80 @@
+global proc string _getOther(string $sel, string $fnd, string $rep, int $mirror){
+    string $other;
+    if ($fnd == "")
+        $fnd = "_L";
+    if ($rep == "")
+        $rep = "_R";
+    $bn = `match "[^|]+$" $sel`;
+    $find_other = `substitute $fnd $bn $rep`;
+    if (`objExists $find_other`)
+        $other = $find_other;
+    else{
+        if ($mirror){
+            $other = `group -em -n $find_other`;
+            vector $par_pos = `xform -q -ws -rp $sel`;
+            vector $par_rot = `xform -q -ws -ro $sel`;
+            $res = `doMirYZ $other $par_pos $par_rot`;
+            print {" Mirror result of created other side: " + $res};
+        }
+    }
+    return $other;
+}
+global proc string[] miryz(){
+    string $items[];
+    string $lssl[] = `ls -sl`;
+    vector $pos;
+    vector $rot;
+    vector $mir_pos;
+    string $other;
+    string $ls_cur_par[];
+    string $sl_long_par[];
+    //$sel = $lssl[0]
+    int $i;
+    for ($sel in $lssl){
+        $ls_par = `listRelatives -p -f $sel`;
+        $pos = `xform -q -ws -rp $sel`;
+        $rot = `xform -q -ws -ro $sel`;
+        $find_other = `_getOther $sel "" "" 1`;
+        if ($find_other == "")
+            continue;
+        $other = $find_other;
+        if (size($ls_par)){
+            $par = `_getOther $ls_par[0] "" "" 0`;
+            if ($par == "")
+                $par = $ls_par[0];
+            $ls_cur_par = `listRelatives -p -f $other`;
+            $sl_long_par = `ls -l $par`;
+            print "\n$ls_cur_par";
+            print $ls_cur_par;
+            print "\n$sl_long_par";
+            print $sl_long_par;
+            print {$other};
+            print {$par};
+            if ($ls_cur_par[0] != $sl_long_par[0])
+                parent $other $par;
+        }
+        vector $pos = `xform -q -ws -rp $sel`;
+        vector $rot = `xform -q -ws -ro $sel`;
+        $res = `doMirYZ $other $pos $rot`;
+        print {" Mirror result of selected item: " + $res};
+        $items[$i++] = $other;
+    }
+    select $items;
+    return $items;
+}
+
+global proc int doMirYZ(string $sel, vector $pos, vector $rot){
+    vector $mir_plane = <<-1, 1, 1>>;
+    //$mir_pos = $pos * $mir_plane;
+    $mir_pos = <<($pos.x * $mir_plane.x),
+                 ($pos.y * $mir_plane.y),
+                 ($pos.z * $mir_plane.z)>>;
+    $mir_rot = <<($rot.x + 180),
+                 ($rot.y * -1),
+                 ($rot.z * -1)>>;
+    $res = catchQuiet(`xform -ws -t ($mir_pos.x) ($mir_pos.y) ($mir_pos.z) $sel`);
+    $res += catchQuiet(`xform -ws -ro ($mir_rot.x) ($mir_rot.y) ($mir_rot.z) $sel`);
+    if (!$res)
+        print ":D\n";
+    return $res;
+}

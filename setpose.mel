@@ -1,0 +1,336 @@
+//v0.1a     new  gogbind(): save/restore global poses
+// setBindPose
+
+// TODO:
+//      get default values for user attributes
+//      enum attrs
+
+global proc setpose(){
+    $lssl = `ls -sl`;
+    for ($sel in $lssl){
+        doSetBindPose($sel);
+    }
+}
+
+global proc doSetBindPose(string $dagnode){
+    
+    int $CHECK_NONZERO;
+    int $d;
+    float $val;
+    string $datas[];
+    string $data;
+
+    $pose_at = "avfxDefaultPose";
+    $glob_at = "avfxGlobalPose";
+    vector $g_pos = `xform -q -ws -rp $dagnode`;
+    vector $g_rot = `xform -q -ws -ro $dagnode`;
+    vector $g_scl = `xform -q -ws -s $dagnode`;
+    $data_plg = $dagnode + "." + $pose_at;
+    $gdata_plg = $dagnode + "." + $glob_at;
+    $attrs = `listAttr -k $dagnode`;
+    
+    float $t[];
+    float $r[];
+    float $s[];
+    float $u[];
+    float $viz;
+
+    for ($at in $attrs){
+
+        $dv = $at == "visibility" || startsWith($at, "scale") ? 1 : 0;
+        $plg = $dagnode + "." + $at;
+        $val = `getAttr $plg`;
+        if ($val != $dv){
+            $CHECK_NONZERO = 1;
+            $dv = $val;
+        }
+        $datas[$d++] = `format -s $at -s $dv "\"^1s:^2s\""`;
+    }
+    if ($CHECK_NONZERO){
+        $data = "{" + stringArrayToString($datas, ", ") + "}";
+        if (!`attributeExists $pose_at $dagnode`)
+            addAttr -dt "string" -ln $pose_at -h 0 $dagnode;
+        print {$data};
+        setAttr -type "string" $data_plg $data;
+    }
+    else{
+        if (`attributeExists $pose_at $dagnode`)
+            deleteAttr $data_plg;
+    }
+
+    // write global pose
+    if (!`attributeExists $glob_at $dagnode`){
+        addAttr -dt "string" -ln $glob_at -h 0 $dagnode;
+    }
+    string $gdata = `format
+        -s ($g_pos.x) -s ($g_pos.y) -s ($g_pos.z)
+        "{\"pos:<<^1s, ^2s, ^3s>>\", "`;
+    $gdata += `format
+        -s ($g_rot.x) -s ($g_rot.y) -s ($g_rot.z)
+        "\"rot:<<^1s, ^2s, ^3s>>\", "`;
+    $gdata += `format
+        -s ($g_scl.x) -s ($g_scl.y) -s ($g_scl.z)
+        "\"scl:<<^1s, ^2s, ^3s>>\"}"`;
+    print {$gdata};
+    setAttr -type "string" $gdata_plg $gdata;
+}
+
+global proc gobind(){
+
+    $lssl = `ls -sl`;
+    for($sel in $lssl)
+        doGoBind($sel, {}, 0);
+}
+
+global proc gogbind(){
+    $lssl = `ls -sl`;
+    for($sel in $lssl)
+        doGoBind($sel, {}, 1);
+}
+global proc doGoBind(string $dagnode, string $attrs[], int $global){
+
+    string $pose_attrs[];
+    float $pose_vals[];
+    int $p;
+    
+    $pose_at = "avfxDefaultPose";
+    if ($global)
+        $pose_at = "avfxGlobalPose";
+    
+    $data_plg = $dagnode + "." + $pose_at;
+    print ("\n:::" + $dagnode + "\n");
+    if (!$global){
+        // get data
+        if (`attributeExists $pose_at $dagnode`){
+            
+
+            $data = getAttr($data_plg);
+            $datas = eval("$datas = "+$data);
+            print $datas;
+            for ($dict in $datas){
+                $split_dict = stringToStringArray($dict, ":");
+                $at = $split_dict[0];
+
+                $val = float($split_dict[1]);
+                $pose_attrs[$p] = $at;
+                $pose_vals[$p++] = $val;
+            }
+        }
+        else{
+            $pose_attrs = `listAttr -s -k $dagnode`;
+            $pose_attrs_cb = `listAttr -s -cb $dagnode`;
+            appendStringArray($pose_attrs, $pose_attrs_cb, size($pose_attrs_cb));
+            $p = 0;
+
+            for ($at in $pose_attrs){
+                $dv = $at == "visibility" || startsWith($at, "scale") ? 1 : 0;
+                $pose_vals[$p++] = $dv;
+            }
+        }
+        // edit values
+        if (!size($attrs)){
+            for ($i=0; $i<size($pose_attrs); $i++){
+                $at = $pose_attrs[$i];
+                $val = $pose_vals[$i];
+                $nplg = $dagnode + "." + $at;
+
+                $typ = `attributeQuery -n $dagnode -at $at`;
+                $cmd = "setAttr ";
+                if ($typ == "typed"){
+                    $typ = "string";
+                    $cmd += "-type " + "\"" + $typ + "\"";
+                    
+                }
+                $cmd += " ^1s ^2s";
+                if (`getAttr -se $nplg`){
+                    $eval_cmd = `format -s $nplg -s $val $cmd`;
+                    print ("  cmd: " + $eval_cmd + "\n");
+                    eval($eval_cmd);
+                }
+            }
+        }
+        else{
+            for ($i=0; $i<size($pose_attrs); $i++){
+                
+                $at = $pose_attrs[$i];
+                for ($attr in $attrs)
+                    if ($at == $attr){
+                        
+                        $val = $pose_vals[$i];
+                        $nplg = $dagnode + "." + $at;
+                        
+                        $typ = `attributeQuery -n $dagnode -at $at`;
+                        $cmd = "setAttr ";
+                        if ($typ == "typed"){
+                            $typ = "string";
+                            $cmd += "-type " + "\"" + $typ + "\"";
+                            
+                        }
+                        $cmd += " ^1s ^2s";
+                        if (`getAttr -se $nplg`)
+                            eval(`format -s $nplg -s $val $cmd`);
+                    }
+            }
+        }
+    }
+    else{
+        // go global pose
+        if (`attributeExists $pose_at $dagnode`){
+            
+            // get data
+            vector $pos, $rot, $scl;
+            $data = getAttr($data_plg);
+            $datas = eval("$datas = "+$data);
+            print $datas;
+            for ($dict in $datas){
+                $split_dict = stringToStringArray($dict, ":");
+                $at = $split_dict[0];
+                switch($at){
+                    case "pos":
+                        $pos = eval("$_wat = " + $split_dict[1]);
+                        break;
+                    case "rot":
+                        $rot = eval("$_wat = " + $split_dict[1]);
+                        break;
+                    case "scl":
+                        $scl = eval("$_wat = " + $split_dict[1]);
+                        break;
+                    default:
+                        break;
+                }
+                // print {$pos};
+                // print {$rot};
+                // print {$scl};
+            }
+            // set data
+            $try_pos =  catchQuiet(`xform -ws -t ($pos.x) ($pos.y) ($pos.z)`);
+            $try_rot =  catchQuiet(`xform -ws -ro ($rot.x) ($rot.y) ($rot.z)`);
+            $try_scl =  catchQuiet(`xform -ws -s ($scl.x) ($scl.y) ($scl.z)`);
+            $failed = 0;
+            for ($try in {$try_pos, $try_rot, $try_scl}){
+                if ($try)
+                    $failed += $try;
+            }
+            if ($failed){
+                print("\nSome transformations are failed: " + $failed + "\n");
+            }
+        }
+    }
+}
+
+global proc t(){
+
+    $lssl = `ls -sl`;
+    
+    for ($sel in $lssl){
+        
+        string $attrs[] = `listAttr -s ($sel + ".t")`;
+        doGoBind $sel $attrs 0;
+    }
+
+}
+
+global proc r(){
+
+    $lssl = `ls -sl`;
+    
+    for ($sel in $lssl){
+        
+        string $attrs[] = `listAttr -s ($sel + ".r")`;
+        doGoBind $sel $attrs 0;
+    }
+
+}
+
+global proc s(){
+
+    $lssl = `ls -sl`;
+    
+    for ($sel in $lssl){
+        
+        string $attrs[] = `listAttr -s ($sel + ".s")`;
+        doGoBind $sel $attrs 0;
+    }
+
+}
+
+global proc tr(){
+
+    $lssl = `ls -sl`;
+    
+    for ($sel in $lssl){
+        
+        string $attrs[] = `listAttr -s ($sel + ".t") ($sel + ".r")`;
+        doGoBind $sel $attrs 0;
+    }
+
+}
+
+global proc rs(){
+
+    $lssl = `ls -sl`;
+    
+    for ($sel in $lssl){
+        
+        string $attrs[] = `listAttr -s ($sel + ".r") ($sel + ".s")`;
+        doGoBind $sel $attrs 0;
+    }
+
+}
+
+global proc ts(){
+
+    $lssl = `ls -sl`;
+    
+    for ($sel in $lssl){
+        
+        string $attrs[] = `listAttr -s ($sel + ".t") ($sel + ".s")`;
+        doGoBind $sel $attrs 0;
+    }
+
+}
+
+global proc trs(){
+
+    $lssl = `ls -sl`;
+    
+    for ($sel in $lssl){
+        
+        string $attrs[] = `listAttr -s ($sel + ".t") ($sel + ".r") ($sel + ".s")`;
+        doGoBind $sel $attrs 0;
+    }
+
+}
+
+global proc putEvalCmd(){
+
+    string $lssl[] = `ls -sl`;
+    if (!size($lssl))
+        return;
+
+    $at_ln = "notes";
+    $at_sn = "nts";
+
+
+    if (!`attributeExists $at_ln $lssl[0]`)
+            addAttr -dt "string" -ln $at_ln -sn $at_sn $lssl[0];
+
+    evalDeferred("writeEvalCmd(\"" + $lssl[0] + "\")");
+}
+
+global proc writeEvalCmd(string $sel){
+    
+    $cmd = "{\n\t"+
+            "$data = `getAttr .avfxDefaultPose`;\n\t"+
+            "string $split[];\n\t"+
+            "int $token_sz = `tokenize $data \" \" $split`;\n\t"+
+            "for ($line in $split){\n\t\t"+
+                "string $split_attr_data[];\n\t\t"+
+                "string $at = `match \"[a-zA-Z0-9]+\" $line`;\n\t\t"+
+                "float $val = `match \"[-0-9.]+\" $line`;\n\t\t"+
+                "setAttr (\".\" + $at) $val;\n\t"+
+            "}\n"+
+        "}";
+
+    setAttr -type "string" ($sel + ".nts") $cmd;
+}

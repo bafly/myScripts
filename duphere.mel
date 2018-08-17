@@ -1,0 +1,76 @@
+//v0.1a
+
+global proc string[] duphere(){
+    // returns first elements of duplicated items(roots)
+    // last selected item parent location
+    string $pfx, $sfx;
+    $name_parts = inputPfxSfx();
+    if (!size($name_parts))
+        return{};
+    $pfx = $name_parts[0];
+    if (size($name_parts) > 1)
+        $sfx = $name_parts[1];
+
+    $lssl =`ls -sl`;
+    $sz = size($lssl);
+    $parent = $lssl[$sz-1];
+    stringArrayRemoveAtIndex($sz-1, $lssl);
+    
+    string $items[];
+    int $i;
+    for ($sel in $lssl){
+        $dups = `doDuplicateRenameParent $pfx $sel $sfx $parent`;
+        $items[$i++] = $dups[0];
+    }
+    return $items;
+}
+
+global proc string[] doDuplicateRenameParent(
+        string $pfx, string $sel, string $sfx,
+        string $parent){
+    
+    string $dup[] = `duplicate -ic -rr $sel`;
+    $bn = `substitute ".*|" $dup[0] ""`;
+    if ($parent != ""){
+        $dup = `parent $dup[0] $parent`;
+        $bn = `substitute ".*|" $sel ""`;
+    }
+    string $root_name = $pfx + $bn + $sfx;    
+    $dup[0] = `rename $dup $root_name`;
+    
+    string $newhi[] = {$dup[0]};
+    string $lshi[] = `listRelatives -ad -type transform -pa $dup[0]`;
+    int $n = 1;
+    //string $sl = $lssl[1];
+    for ($sl in $lshi){
+        print {$sl};
+        // rename
+        $pa = `match ".*|" $sl`;
+        $bn = `substitute $pa $sl ""`;
+        $newhi[$n++] = `rename $sl ($pfx + $bn + $sfx)`;
+    }
+    return $newhi;
+}
+
+global proc string[] inputPfxSfx(){
+    
+    string $pfx, $sfx;
+    string $res[];
+    $_inp_pfx = `promptDialog
+        -m "Prefix Hierarchy"
+        -tx "proxy_"
+        -b "Ok" -b "Cancel"
+        -db "Ok" -cb "Cancel"`;
+    
+    if ($_inp_pfx != "Cancel"){
+        $res[0] = `promptDialog -q -tx`;
+        $_inp_sfx = `promptDialog
+            -m "Suffix Hierarchy"
+            -tx "_old"
+            -b "Ok" -b "Cancel"
+            -db "Ok" -cb "Cancel"`;
+        if ($_inp_sfx != "Cancel")
+            $res[1] = `promptDialog -q -tx`;
+    }
+    return $res;
+}

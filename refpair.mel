@@ -1,0 +1,125 @@
+//v0.1a
+
+global proc string[] refpair(string $mode1, string $mode2){
+    // tries to find reference pairs if simple name(s) are selected
+    // or home goems if reference(s) are selected
+    
+    string $lssl[] = `ls -sl`;
+    string $msg = "\nReference pairs forund:";
+
+    string $items[] = findRefPairs($lssl);
+    int $swap;
+    if (!size($items)){
+        $swap = 1;
+        $items = findPairsFromRef($lssl);
+        if (!size($items)){
+            $msg = "\nNoting is found... -_-'";
+            return {};
+        }
+        $msg = "\nHome pairs forund:";
+    }
+    // if (!size($ls_rps)){
+    //     int $s;
+    //     for ($sel in $lssl){
+    //         $bn = `match "[^|]+$" $sel`;
+    //         $stripname = `match "[^:]+$" $bn`;
+    //         if (`objExists $stripname`)
+    //             $ls_rps[$s++] = $stripname;
+    //     }
+    // }
+    
+    // swap if 
+    if ($swap){
+        $tmp_ls = $lssl;
+        $lssl = $items;
+        $items = $tmp_ls;
+    }
+    int $dosel;
+    for ($mode in {$mode1, $mode2}){
+        switch($mode){
+            case "-sel":
+                $dosel = 1;
+                break;
+            case "-add":
+                $items = zipItems($items, $lssl);
+                break;
+            default:
+                break;
+        }
+    }
+    print {$msg};
+    print $items;
+    if ($dosel){
+        print {"..Selecting"};
+        select $items;
+    }
+    return $items;
+}
+
+global proc string[] doRefPair(string $lssl[]){
+    if (!size($lssl))
+        $lssl = `ls -sl`;
+    string $items[] = findRefPairs($lssl);
+    string $msg = "\nReference pairs forund:";
+    if (!size($items)){
+        $items = findPairFromRef($lssl);
+        if (!size($items)){
+            $msg = "\nNoting is found... -_-'";
+            return {};
+        }
+        $msg = "\nHome pairs forund:";
+    }
+    return $items;
+}
+
+global proc string[] zipItems(string $zipA[], string $zipB[]){
+    
+    $szA = size($zipA);
+    $szB = size($zipB);
+    if ($szA != $szB){
+        print {"  ! Not Equal"};
+        return {};
+    }
+    string $items[];
+    int $i;
+    for ($i=0, $j=0; $i<$szA; $i++){
+        $items[$j++] = $zipA[$i];
+        $items[$j++] = $zipB[$i];
+    }
+    return $items;
+}
+global proc string[] findRefPairs(string $lssl[]){
+    
+    // string $lsobj[] = `ls $obj`;
+    // $basename = `match "[^|]+$" $lsobj[0]`;
+
+    // $ls_by_rf = `ls -r 1 $basename`;
+    // string $ls_pair[] = stringArrayRemove({$lsobj[0]}, $ls_by_rf);
+    // string $pairs[] = `ls $obj $ls_pair`;
+    // return $pairs;
+    if (!size($lssl))
+        $lssl = `ls -sl`;
+    string $items[];
+    int $i;
+    for ($sel in $lssl){
+        $bn = `match "[^|]+$" $sel`;
+        $ls_ref = `ls ("*:" + $bn)`;
+        if (size($ls_ref))
+            $items[$i++] = $ls_ref[0];
+    }
+    return $items;
+}
+
+global proc string[] findPairsFromRef(string $lssl[]){
+    if (!size($lssl))
+        $lssl = `ls -sl`;
+    string $items[];
+    int $i;
+    for ($sel in $lssl){
+        $strip_ns = `match "[^:]+$" $sel`;
+        $bn = `match "[^|]+$" $strip_ns`;
+        if (`objExists $bn`)
+            $items[$i++] = $bn;
+    }
+    return $items;
+}

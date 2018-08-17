@@ -1,4 +1,4 @@
-// v0.2a new getratio()
+// v0.3  new manipjnt()
 // v0.2  new putonplane()
 // v0.1  new putonvec()
 
@@ -20,7 +20,7 @@ global proc vector vec(){
     return $gBaVec;
 }
 
-global proc vecmove(int $inv){
+global proc vecmove(float $inv){
 
     global vector $gBaVec;
     if (!$gBaVec)
@@ -28,13 +28,7 @@ global proc vecmove(int $inv){
 
     move -r ($gBaVec.x * $inv) ($gBaVec.y * $inv) ($gBaVec.z * $inv);
 }
-global proc vecmoveto(vector $inv){
-    global vector $gBaVec;
-    if (!$gBaVec)
-        vec();
 
-    move ($gBaVec.x * $inv.x) ($gBaVec.y * $inv.y) ($gBaVec.z * $inv.z);
-}
 global proc doVecMove(string $lssl[]){
 
     global vector $gBaVec;
@@ -139,6 +133,26 @@ global proc float vecratio(){
     return $rat;
 }
 
+global proc vector vecratio3(){
+    global vector $gBaVec;
+    if (!mag($gBaVec))
+        return 0;
+
+    string $lssl[] = `ls -fl -sl`;
+    $vec = doVec($lssl[0], $lssl[1]);
+    vector $v1x = $gBaVec * <<1, 0, 0>>;
+    vector $v2x = $vec * <<1, 0, 0>>;
+    vector $v1y = $gBaVec * <<0, 1, 0>>;
+    vector $v2y = $vec * <<0, 1, 0>>;
+    vector $v1z = $gBaVec * <<0, 0, 1>>;
+    vector $v2z = $vec * <<0, 0, 1>>;
+    vector $rat;
+    $ratx = doVecRatio($v1x, $v2x);
+    $raty = doVecRatio($v1y, $v2y);
+    $ratz = doVecRatio($v1z, $v2z);
+    $rat = <<$ratx, $raty, $ratz>>;
+    return $rat;
+}
 global proc putonvec(){
 
     // first user must use vec() to initiate data
@@ -180,36 +194,10 @@ global proc vector projectOnVec(vector $C, vector $vec, vector $A){
     return $C1;
 }
 
-global proc float getratio(){
-    // returns(float), value(ratio) between two targets
-    //   according to distance
-    // select only 3 items: trgA, trgB and child
-    $lssl = `ls -fl -sl`;
-    if (size($lssl) != 3)
-        return -1;
-    $trgA = $lssl[0];
-    $trgB = $lssl[1];
-    $chld = $lssl[2];
-
-    vector $A = `xform -q -ws -t $trgA`;
-    vector $B = `xform -q -ws -t $trgB`;
-    vector $C = `xform -q -ws -t $chld`;
-    $AC = $C - $A;
-    $BC = $C - $B;
-    // print $AC;
-    // print $BC;
-    float $a = mag($AC);
-    float $b = mag($BC);
-    float $sum = $a + $b;
-    float $ratio = $a / $sum;
-    print {$ratio};
-    return $ratio;
-}
-
 ////////////////////////////////////////////////////////////////
 ///////////////           MATRIX TOOLS           ///////////////
 
-// usage:
+// usage(doRotMat):
 //  vector $vecA = <<0, 1.5, 0.8>>;
 //  vector $vecB = <<0, 0.5, -0.3>>;
 //  vector $vecX = unit(cross($vecA, $vecB));    // normalized crossProduct(rotation axis)
@@ -257,7 +245,7 @@ global proc vector multmtxvec(){
     if (!$gBaVec)
         vec();
 
-    $Rv = doMultMatVec($gBaMtx, $gBaVec);
+    $Rv = doMultMtxVec($gBaMtx, $gBaVec);
     return $Rv;
 }
 
@@ -315,10 +303,11 @@ global proc ext(){
     if (!size($gPlane))
         return;
 
+    string $sel;
     vector $P, $P1;
     vector $vecs[];
     $lssl = `ls -sl -fl -type float3`;
-    string $edgs[] = `doFindEdges $lssl`;
+    $edgs = `doFindEdges $lssl`;
     vector $all_vec[];
     //$sel = $edgs[0]
     // $P1 = `putOnPlane $vecs[0] $p $gPlane`
@@ -423,8 +412,7 @@ global proc putonplane(){
     // if edge selected
 }
 
-global proc
-float getDistanceToPlane(
+global proc float getDistanceToPlane(
         vector $P,
         vector $p,
         vector $plane[]){
@@ -529,29 +517,62 @@ global proc float[] pinfo(string $line){
 global proc string vecjnt(){
 
     global vector $gBaVec;
+    global vector $gBaRotVec;
     if (!$gBaVec)
         vec();
-    return `doVecJnt $gBaVec ""`;
+    
+    $lssl = `ls -sl`;
+    $lshl = `ls -hl`;
+    $isCompMode = `selectMode -q -co`;
+    
+    string $jnt = `doVecJnt $gBaVec $gBaRotVec ""`;
+    addToIsolate {$jnt};
+    
+    if ($isCompMode){
+        select $lshl;
+        selectMode -co;
+    }
+    return $jnt;
 }
 
-global proc string doVecJnt(vector $pos, string $name){
+global proc string manipjnt(){
+    // placing joint on manip;
+    vector $vecs[] = getManipTransforms();
+
+    $lssl = `ls -sl`;
+    $lshl = `ls -hl`;
+    $isCompMode = `selectMode -q -co`;
+
+    string $jnt = doVecJnt($vecs[0], $vecs[1], "");
+    addToIsolate {$jnt};
     
+    if ($isCompMode){
+        select $lshl;
+        selectMode -co;
+    }
+    return $jnt;
+}
+
+global proc string doVecJnt(vector $pos, vector $rot, string $name){
+        
+    select -d;
     if (`objExists $name`)
         move -ws ($pos.x) ($pos.y) ($pos.z) $name;
-    else
-        $name = `joint -n $name -p ($pos.x) ($pos.y) ($pos.z)`;
+    else{
+        $name = `joint 
+            -n $name 
+            -ax ($rot.x) -ay ($rot.y) -az ($rot.z)
+            // -o ($rot.x) ($rot.y) ($rot.z)
+            -p ($pos.x) ($pos.y) ($pos.z)`;
+        // rotate ($rot.x) ($rot.y) ($rot.z);
+    }
     return $name;
 }
 
 ////////////////////////////////////////////////////////////////
 ///////////////            OTHER TOOLS           ///////////////
-global proc vector vecmanip(){
-    global vector $gBaVec;
-    $gBaVec = `getManipPos`;
-    return $gBaVec;
-}
 
-global proc vector getManipPos(){
+global proc vector getManipPos_(){
     
     vector $pos;
     string $manip = `currentCtx`;
@@ -566,4 +587,77 @@ global proc vector getManipPos(){
     }
 
     return $pos;
+}
+
+global proc vector[] getManipTransforms(){
+    
+    vector $pos;
+    vector $rot;
+    vector $vecs[];
+    string $manip = `currentCtx`;
+    // global vector $gBaVec;
+    // global vector $gBaRotVec;
+    if ($manip != ""){
+        print {"Manip: " + $manip};
+        $typ = `match "^[a-zA-Z][a-z]+" $manip`;
+        $part2 = toupper(startString($typ, 1)) + endString($typ, size($typ)-1);
+        // vector $pos = `manipMoveContext -q -p $part2`;
+        $tool = `format -s $part2 "manip^1sContext"`;
+        $eval_pos = `format -s $tool -s $part2 "^1s -q -p ^2s"`;
+        $eval_rot = `format -s $tool -s $part2 "^1s -q -oa ^2s"`;
+        $pos = eval($eval_pos);
+        print {"Tool: " + $part2};
+        if ($part2 == "Rotate"){
+            print {"Roate"};
+            vector $rad_rot = eval($eval_rot);
+            $rot = rad2degVector($rad_rot);
+            // $gBaRotVec = $rot;
+        }
+        // $gBaVec = $pos;
+    }
+    $vecs = {$pos, $rot};
+    return $vecs;
+}
+
+global proc vector rad2degVector(vector $rads){
+    vector $rot;
+    $rot = <<rad_to_deg($rads.x),
+             rad_to_deg($rads.y),
+             rad_to_deg($rads.z)>>;
+    return $rot;
+}
+
+global proc vector[] getPivotManipTransforms_(){
+    
+    // global prosion and rotations
+    vector $pos;
+    vector $rot;
+    vector $vecs[];
+    // string $manip = `currentCtx`;
+    evalDeferred("-lp", "ctxEditMode -buttonUp");
+    evalDeferred("-lp", "ctxEditMode -buttonDown");
+    $vecs = evalDeferred("-lp", "getVecsFromManip()");
+    evalDeferred("-lp", "ctxEditMode -buttonUp");
+    $vecs = {$pos, $rot};
+    return $vecs;
+}
+
+global proc vector[] getVecsFromManip(){
+    vector $pos = `manipPivot -q -p`;
+    vector $rot = `manipPivot -q -o`;
+    $vecs = {$pos, $rot};
+    return $vecs;
+}
+
+////////// misc /////////////
+// add new items to isolate
+// addToIsolate {}
+global proc addToIsolate(string $lssl[]){
+    if (!size($lssl)){
+        $lssl = `ls -sl`;
+    }
+    $isol_sets = `ls -set "*ViewSelectedSet"`;
+    for ($set in $isol_sets){
+        sets -add $set $lssl;
+    }
 }

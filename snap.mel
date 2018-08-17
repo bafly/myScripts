@@ -1,0 +1,100 @@
+// dependencies
+// ! doSnap > mkctrls.mel
+// snap
+proc string getPairByNS(string $node){
+
+    string $pair = `match "[^:]+$" $node`;
+
+    return $pair;
+}
+
+global proc snap(){
+    dosnap 1 0;
+}
+global proc snapo(){
+    dosnap -1 0;
+}
+global proc snapp(){
+    dosnap 0 0;
+}
+global proc snappcp(){
+    dosnap 1 1;
+}
+global proc snapppcp(){
+    dosnap 0 1;
+}
+global proc snapopcp(){
+    dosnap -1 1;
+}
+global proc dosnap(int $ALL, int $pcp){
+    
+    // $ALL = 1;
+    $lssl = `ls -sl`;
+    $src = $lssl[size($lssl)-1];
+    if (size($lssl) == 1){
+        $lssl[1] = getPairByNS($lssl[0]);
+        if (`objExists $lssl[1]`)
+            doSnap($lssl[1], $lssl[0], $ALL, $pcp);
+    }
+    else{
+        for ($s=0; $s<size($lssl)-1; $s++){
+            doSnap $lssl[$s] $src $ALL $pcp;
+        }
+        
+    }
+    // select $src;
+}
+
+global proc doSnap(string $trg, string $src,
+                   int $ALL, int $pcp){
+
+    /*
+    $ALL
+            0 - to snap only position use
+            1 - to snap ALL position and rotation
+           -1 - or any to snap only rotation
+    $pcp - preserve childs position
+
+    */
+    string $eval_rot, $eval_pos;
+    vector $pos = `xform -q -ws -rp $src`;
+    vector $rot = `xform -q -ws -ro $src`;
+    print {$pos};
+    print {$rot};
+    $pcp_arg = $pcp ? "-pcp" : "";
+    $eval_rot = `format -s "rotate"
+                        -s $pcp_arg
+                        -s ($rot.x) -s ($rot.y) -s ($rot.z)
+                        -s $trg
+                         "^1s ^2s -ws ^3s ^4s ^5s ^6s"`;
+    $eval_pos = `format -s "move"
+                        -s $pcp_arg
+                        -s ($pos.x) -s ($pos.y) -s ($pos.z)
+                        -s $trg
+                         "^1s ^2s -ws ^3s ^4s ^5s ^6s"`;
+    switch ($ALL){
+        case 1:
+            print {$eval_rot};
+            eval($eval_rot);
+        case 0:
+            print {$eval_pos};
+            eval($eval_pos);
+            break;
+        default:
+            print {$eval_rot};
+            eval($eval_rot);
+            break;
+
+    }
+
+    // preserve children if src is child of trg
+    $ls_par = `listRelatives -f -p $src`;
+    $ls_src = `ls -l $trg`;
+    int $pve;
+    if (size($ls_par)){
+        if ($ls_par[0] == $ls_src[0]){
+            xform -ws -t ($pos.x) ($pos.y) ($pos.z) $src;
+            xform -ws -ro ($rot.x) ($rot.y) ($rot.z) $src;
+        }
+    }
+}

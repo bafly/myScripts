@@ -359,6 +359,16 @@ global proc string conMD(
     return ($md + "." + $out_at);
 }
 
+global proc string conDoADL(string $plgA, string $plgB, string $plgC){
+
+    $adl = "adl_" + `formValidObjectName $plgC`;
+    $adl = `createNode -n $adl -ss addDoubleLinear`;
+    connectAttr -f $plgA ($adl + ".i1");
+    if (`objExists $plgB`)
+        connectAttr -f $plgB ($adl + ".i2");
+    connectAttr -f ($adl + ".o") $plgC;
+    return $adl;
+}
 global proc conADL(){
     $lscb = `channelBox -q -sma mainChannelBox`;
     $lssl = `ls -sl`;
@@ -378,11 +388,16 @@ global proc conADL(){
     }
 }
 
-global proc conPB(float $blend){
-
+// global proc conPB(float $blend){
+global proc string conPB(string $blend){
+    // blend: if string passed with "."(dot) will create attriute on A item
+    //      else will convert to float value
+    // returns: blendWeighted.weight plug
+    string $blend_plg;
+    float $blend_val;
     $lssl = `ls -sl -tr`;
     if (size($lssl) < 3)
-        return;
+        return "";
     $srcA = $lssl[0];
     $srcB = $lssl[1];
     $trg = $lssl[2];
@@ -400,7 +415,17 @@ global proc conPB(float $blend){
                        $trg_p, $pb
                        );
     }
-    setAttr ($pb + ".w") $blend;
+    string $wg_plg = $pb + ".w";
+    if (startsWith($blend, ".")){
+        $blend_plg = $srcA + $blend;
+        $blend_at = `match "[^.]+$" $blend`;
+        if (!`objExists $blend_plg`)
+            addAttr -at "float" -ln $blend_at -k 1 $srcA;
+        connectAttr -f $blend_plg $wg_plg;
+    }
+    else
+        setAttr $wg_plg $blend_val;
+    return $wg_plg;
 }
 
 global proc
@@ -490,7 +515,7 @@ global proc doCon(
     print ("\n<"+(abs($val-$def)));
     // using
     if (!$ucf){
-        doRevCon $src_plg $trg_plg;
+        doRevCon $src_plg $trg_plg "";
     }
     else{
         if ($ucf == 1.0){
@@ -632,7 +657,7 @@ global proc string doUCCon (
         connectAttr $src_plg .i;
     
     if ($trg_plg != "")
-        connectAttr .o $trg_plg;
+        connectAttr -f .o $trg_plg;
     
     return ($node + ".o");
 

@@ -1,0 +1,281 @@
+//v0.1a - xcon - removes and returns removed results
+global proc string[] recon(){
+    string $ls_cns[];
+    $lssl = `ls -sl`;
+    for ($sel in $lssl){
+        $ls_cns = stringArrayCatenate($ls_cns, `doRecon $sel`);
+    }
+    return $ls_cns;
+}
+global proc string[] findCns(string $sel){
+    string $ls_con[] = `listConnections -s 0 -d 1
+                                        -type constraint
+                                        ($sel + ".pim")`;
+    return $ls_con;
+}
+global proc string doReconstraint(string $cns, string $chld){
+    string $eval_cmd;
+    string $ls_cns[], $ls_cns[], $tls[], $wls[];
+    float $wl_state[];
+    int $c;
+    if ($chld == ""){
+        $ls_chld = `listConnections -s 1 -d 0 ($cns + ".cpim")`;
+        if (!size($ls_chld))
+            print {"  ! Broken Constraint: " + $cns};
+            return "";
+        $chld = $ls_chld[0];
+    }
+    print {"  Child: " + $chld};
+    $cns_typ = `objectType $cns`;
+    $q_tl_cmd = `format -s $cns_typ -s $cns "^1s -q -tl ^2s"`;
+    $q_wl_cmd = `format -s $cns_typ -s $cns "^1s -q -wal ^2s"`;
+    $eval_cmd = `format -s $cns_typ "^1s -mo"`;
+    // print $q_tl_cmd;
+    $tls = eval($q_tl_cmd);
+    $wls = eval($q_wl_cmd);
+
+    if (!size($tls)){
+        print "x_X\n";
+        return {};
+    }
+
+    $eval_cmd += " " + stringArrayToString($tls, " ");
+    // print {$eval_cmd};
+    $eval_cmd += " " + $chld;
+    int $res;
+    int $t;
+    for ($at in $wls){
+        $plg = $cns + "." + $at;
+        $wl_state[$t] = `getAttr $plg`;
+        $res = catchQuiet(`setAttr $plg 0`);
+        $sn_plg = `listAttr -sn $plg`;
+        $wls[$t++] = $sn_plg[0];
+    }
+    if ($res){
+        print {" ! Can't swtich off target weights: " + $cns};
+        return {};
+    }
+    // print{"Failed: " + $res};
+    // print "tls: ";
+    // print $tls;
+    // recreate old constraint
+    delete $cns;
+    print {" >>: " + $eval_cmd};
+    $ls_cns = eval($eval_cmd);
+    if (`objExists $ls_cns[0]`){
+        int $w;
+        // set back saved weight values
+        for ($at in $wls){
+            $plg = $ls_cns[0] + "." + $at;
+            $val = $wl_state[$w++];
+            setAttr $plg $val;
+        }
+    }
+    return $ls_cns[0];
+}
+
+global proc string[] doRecon(string $sel){
+
+    // select child
+    string $cns;
+    string $ls_cns[];
+
+    print{" cur child: " + $sel};
+    $ls_con = `listConnections -s 0 -d 1 -type constraint ($sel + ".pim")`;
+    if (!size($ls_con)){
+        print "O_o\n";
+        return {};
+    }
+    for ($cns in $ls_con){
+        $cns = `doReconstraint $cns $sel`;
+        if ($cns != "")
+            $ls_cns = stringArrayCatenate($ls_cns, {$cns});
+    }
+    return $ls_cns;
+}
+
+global proc string[] getConEval(string $cns){
+    string $cmds[];
+    string $tls[], $wls[];
+    $ls_chld = `listConnections -s 1 -d 0 ($cns + ".cpim")`;
+    if (!size($ls_chld)){
+        print "X_x child\n";
+        return {};
+    }
+    $chld = $ls_chld[0];
+    $con_typ = `objectType $cns`;
+    string $q_tl_cmd = `format -s $con_typ -s $cns "^1s -q -tl ^2s"`;
+    string $q_wl_cmd = `format -s $con_typ -s $cns "^1s -q -wal ^2s"`;
+    string $eval_cmd = `format -s $con_typ "^1s -mo"`;
+    // print $q_tl_cmd;
+    $tls = eval($q_tl_cmd);
+    // TODO: make with wight values
+    $wls = eval($q_wl_cmd);
+    string $wl_sn[];
+    int $w;
+    for ($wl in $wls){
+        $plg = $cns + "." + $wl;
+        $sn = `listAttr -sn $plg`;
+        $wl_sn[$w++] = $sn[0];
+    }
+    if (!size($tls)){
+        print "x_X\n";
+        return {};
+    }
+
+    $eval_cmd += " " + stringArrayToString($tls, " ");
+    $eval_cmd += " " + $chld;
+    $cmds = {$eval_cmd, $q_tl_cmd};
+    print $cmds;
+    return $cmds;
+}
+
+global proc updcon(string $lssl[]){
+    if (!size($lssl)){
+        for ($sel in `ls -sl`)
+            $lssl = stringArrayCatenate(
+                $lssl,
+                `listConnections
+                    -s 0 -d 1 
+                    -type constraint ($sel+".pim")`
+                );
+    }
+    //$con = $lssl[0]
+    print{" constraints:"};
+    print $lssl;
+    for ($con in $lssl){
+        $con_typ = `objectType $con`;
+        $eval_cmd = `format -s $con_typ "^1s -e -mo"`;
+        $q_tl_cmd = `format -s $con_typ -s $con "^1s -q -tl ^2s"`;
+        $ls_chld = `listConnections -s 1 -d 0 ($con + ".cpim")`;
+        $tls = eval($q_tl_cmd);
+        $eval_cmd += " " + stringArrayToString($tls, " ");
+        if (!size($ls_chld)){
+            print `format -s $con "\n -_- no child: ^1s\n"`;
+            continue;
+        }
+        $eval_cmd += " " + $ls_chld[0];
+        eval($eval_cmd);
+        setAttr ($con + ".nds") 0;
+    }
+}
+
+global proc conGoRest(string $cont){
+    print {"c:" + $cont};
+    $chld = `listConnections -s 1 -d 0 ($cont + ".cpim")`;
+    $pos_plg = $cont + ".rst";
+    if (`objExists $pos_plg`){
+        float $vals[] = `getAttr ($cont + ".rst")`;
+        catchQuiet(`setAttr ($chld[0] + ".t") $vals[0] $vals[1] $vals[2]`);
+    }
+    $rot_plg = $cont + ".rsrr";
+    if (`objExists $rot_plg`){
+        float $vals[] = `getAttr ($cont + ".rsrr")`;
+        catchQuiet(`setAttr ($chld[0] + ".r") $vals[0] $vals[1] $vals[2]`);
+    }
+    $scl_plg = $cont + ".rs";
+    if (`objExists $scl_plg`){
+        float $vals[] = `getAttr ($cont + ".rs")`;
+        catchQuiet(`setAttr ($chld[0] + ".s") $vals[0] $vals[1] $vals[2]`);
+    }
+}
+
+proc updcont(string $cont){
+
+        setAttr ($cont + ".nds") 2;
+        $c_type = `objectType $cont`;
+        $cmd = $c_type;
+        $tl_cmd = " -q -tl " + $cont;
+        $tl = eval($cmd + $tl_cmd);
+        $mo_cmd = " -e -mo " 
+                + stringArrayToString($tl, " ") 
+                + " " 
+                + $cont;
+        print({$cmd + $mo_cmd});
+        eval($cmd + $mo_cmd);
+        setAttr ($cont + ".nds") 0;
+}
+global proc conSetRest(string $cns,
+                       vector $rpos,
+                       vector $rrot,
+                       vector $rscl
+                       ){
+    print $rpos;
+    print $rrot;
+    print $rscl;
+    $pos_plg = $cns + ".rst";
+    $rot_plg = $cns + ".rsrr";
+    $scl_plg = $cns + ".rs";
+    if (`objExists $pos_plg`){
+        catchQuiet(`setAttr $pos_plg ($rpos.x) ($rpos.y) ($rpos.z)`);
+    }
+
+    if (`objExists $rot_plg`){
+        catchQuiet(`setAttr $rot_plg ($rrot.x) ($rrot.y) ($rrot.z)`);
+    }
+
+    if (`objExists $scl_plg`){
+        catchQuiet(`setAttr $scl_plg ($rscl.x) ($rscl.y) ($rscl.z)`);
+    }
+
+
+}
+global proc recon_(){
+    $cons = `ls -sl -dag -type constraint`;
+    for($cont in $cons){
+        setAttr ($cont + ".nds") 2;
+        conGoRest $cont;
+        updcont $cont;
+    }
+}
+
+global proc int doDeleteConstraints(string $lssl[]){
+
+    if (!size($lssl))
+        $lssl = `ls -sl`;
+    int $res = 0;
+    int $sz;
+    for ($sel in $lssl){
+        string $ls_pac = `parentConstraint -q $sel`;
+        string $ls_poc = `pointConstraint -q $sel`;
+        string $ls_ac = `aimConstraint -q $sel`;
+        string $ls_oc = `orientConstraint -q $sel`;
+        string $ls_sc = `scaleConstraint -q $sel`;
+        $ls_cons = ls({$ls_pac, $ls_poc, $ls_ac, $ls_oc, $ls_sc});
+        $sz = size($ls_cons);
+        catchQuiet(delete($ls_pac));
+        catchQuiet(delete($ls_poc));
+        catchQuiet(delete($ls_ac));
+        catchQuiet(delete($ls_oc));
+        catchQuiet(delete($ls_sc));
+        $sz_after = size(ls({$ls_pac, $ls_poc, $ls_ac, $ls_oc, $ls_sc}));
+        $res += $sz - $sz_after;
+        // parentConstraint -mo $src $sel;
+        // scaleConstraint -mo $src $sel;
+    }
+    return $res;
+}
+
+global proc string[] selcnstl(){
+    string $items[];
+    string $lssl[] = `ls -sl`;
+    //$sel = $lssl[0]
+    for ($sel in $lssl){
+        $ls_cns = `listConnections -s 0 -d 1 -type constraint ($sel + ".pim")`;
+        if (size($ls_cns))
+            for ($cns in $ls_cns){
+                $cns_cmds = `getConEval $cns`;
+                $targets = eval($cns_cmds[1]);
+                if (size($targets))
+                    $items = stringArrayCatenate($items, $targets);
+            }
+    }
+    select $items;
+    return $items;
+}
+
+global proc int xcon(){
+    // remove constraints on selected items
+    int $res = doDeleteConstraints({});
+    return $res;
+}
