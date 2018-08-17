@@ -1,0 +1,58 @@
+global proc evalShelf(){
+    $win = `window`;
+    $lay = `shelfTabLayout
+        -snt 1
+        "evalShelfTabLayout#"
+        `;
+    shelfTabLayout -e -ntc ("shelfLayout -p " + $lay) $lay;
+    shelfTabLayout -e -dcc ("evalCurrentTabContents " + $lay) $lay;
+    showWindow $win;
+}
+
+global proc int evalCurrentTabContents(string $tabLayout){
+    // returns number of errors
+    $cur_tab = `getCurrentTab $tabLayout`;
+    $btns = `getTabButtons $cur_tab`;
+    print `format -s $cur_tab "evaluating buttons from ^1s: \n"`;
+    // print {"Nubmer of buttons: " + size($btns)};
+    // print $btns;
+    int $res;
+    for ($btn in $btns)
+        $res += evalButton($btn);
+    
+    return $res;
+}
+
+global proc string getCurrentTab(string $tabLayout){
+    $shelf = `shelfTabLayout -q -st $tabLayout`;
+    return $shelf;
+}
+
+global proc string[] getTabButtons(string $tab){
+    $btns = `shelfLayout -q -ca $tab`;
+    return $btns;
+}
+
+global proc int evalButton(string $btn){
+    // evaluates mel or python commands from shelf buttons
+    // returns signal - 0 - good, 1 - error    
+    string $src_type = `shelfButton -q -stp $btn`;
+    string $cmd = `shelfButton -q -c $btn`;
+    int $res;
+    // print {"cmd: " + $cmd};
+    if ($src_type == "mel"){
+        print `format -s $btn ":: executing mel from button ^1s: \n>> "`;
+        $res = eval($cmd);
+        print "// finished\n";
+    }
+    else
+        if ($src_type == "python"){
+            print `format -s $btn ":: executing py from button ^1s: \n>> "`;
+            $res = python("try:" + $cmd + "\nexcept Exception as e: print e");
+            print "# finished\n";
+        }
+        else
+            print {"::i Unknown cmd source type: " + $src_type};
+    // print "eval button finished\n";
+    return $res;
+}
