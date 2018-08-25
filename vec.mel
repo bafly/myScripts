@@ -1,4 +1,5 @@
 // v0.3  new manipjnt()
+// v0.2a new getratio()
 // v0.2  new putonplane()
 // v0.1  new putonvec()
 
@@ -192,6 +193,32 @@ global proc vector projectOnVec(vector $C, vector $vec, vector $A){
     $c1 = $vec_nrm * $dot;
     $C1 = $c1 + $A;
     return $C1;
+}
+
+global proc float getratio(){
+    // returns(float), value(ratio) between two targets
+    //   according to distance
+    // select only 3 items: trgA, trgB and child
+    $lssl = `ls -fl -sl`;
+    if (size($lssl) != 3)
+        return -1;
+    $trgA = $lssl[0];
+    $trgB = $lssl[1];
+    $chld = $lssl[2];
+
+    vector $A = `xform -q -ws -t $trgA`;
+    vector $B = `xform -q -ws -t $trgB`;
+    vector $C = `xform -q -ws -t $chld`;
+    $AC = $C - $A;
+    $BC = $C - $B;
+    // print $AC;
+    // print $BC;
+    float $a = mag($AC);
+    float $b = mag($BC);
+    float $sum = $a + $b;
+    float $ratio = $a / $sum;
+    print {$ratio};
+    return $ratio;
 }
 
 ////////////////////////////////////////////////////////////////
