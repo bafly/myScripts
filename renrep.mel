@@ -1,0 +1,11 @@
+
+global proc renrep(string $lssl[], string $fnd, string $rep){
+    if (!size($lssl))
+        $lssl = `ls -sl`;
+    for ($sel in $lssl){
+        $shn = `match "[^|]+$" $sel`;
+        $bn = `match "[^:]+$" $shn`;
+        $nn = `substitute $fnd $bn $rep`;
+        rename $sel $nn;
+    }
+}

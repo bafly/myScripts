@@ -1,0 +1,389 @@
+// TODO: parhere(); fix if src and target under the same parent
+//v0.2a - fix - parhere() - cases if src and target have no parents
+//v0.1f - upd - parhere() - complex hierarchy, new arg
+//v0.1e - fix - parhere(); if src and trg under same parent
+//v0.1d - upd - duphere(); selection logic - if only one object is selected
+//v0.1c - upd - parhere(); reorder in outliner
+//      - new - getOutlinerOrder();
+//v0.1b - upd - now substitute works on hierarchy
+//v0.1a
+
+// TODO:
+//parhere -dup -mir -ren;
+//    -dup -duplicate and parent, for best result use with -ren
+//    -mir -find mirror side pair if not - create it and parent
+//        to existing mirrored parent or in same place, can be
+//        used with -ren;
+//    -ren -rename with prefix or suffix or with substitution
+global proc string[] duphere(string $parent){
+    // returns first elements of duplicated items(roots)
+    // last selected item parent location
+    // Args:
+    //  - parent - string, if empty, will be placed at the
+    //      same place as source
+    
+    // ask to kepp inputs
+    $okbtn = "Keep";
+    $okbtn2 = "All Graph";
+    $nobtn = "No";
+    string $chk_mode = inputButtons(
+        "Do keep input connectinos?", {$okbtn, $okbtn2, $nobtn});
+    if ($chk_mode == "Cancel")
+        return {};
+    int $mode = 0;
+    switch ($chk_mode){
+        case "Keep":
+            $mode = 1;
+            break;
+        case "All Graph":
+            $mode = 2;
+            break;
+        default:
+            break;
+    }
+
+    // ask for prefixes and suffixes to be applied on new hierarchy
+    string $pfx, $sfx;
+    string $fnd, $rep;
+    $name_parts = inputPfxSfx();
+    if (!size($name_parts))
+        return{};
+    $pfx = $name_parts[0];
+    if (size($name_parts) > 1)
+        $sfx = $name_parts[1];
+    // ask for name parts replacing within new hierarchy
+    $sub_data = inputFindReplace();
+    if (size($sub_data) == 2){
+        $fnd = $sub_data[0];
+        $rep = $sub_data[1];
+    }
+
+    string $lssl[] =`ls -l -sl`;
+    // find target address (parent)
+    // prefix source suffix find replace parent
+    $dups = `doDuplicateRenameParent
+        $pfx $lssl $sfx
+        $fnd $rep
+        $parent
+        $mode`;
+    return $dups;
+}
+
+global proc string[] dupsubhere(string $fnd, string $rep){
+    
+    // ask to kepp inputs
+    $okbtn = "Keep";
+    $nobtn = "No";
+    $chk_mode = inputButtons(
+        "Do keep input connectinos?", {$okbtn, $nobtn});
+    if ($chk_mode == "Cancel")
+        return {};
+    
+    int $mode = $chk_mode == $okbtn ? 1 : 0;
+    string $items[];
+    if ($fnd == "" && $rep == ""){
+        $sub_data = inputFindReplace();
+        if (size($sub_data) == 2){
+            $fnd = $sub_data[0];
+            $rep = $sub_data[1];
+        }
+    }
+    $lssl =`ls -l -sl`;
+    $sz = size($lssl);
+    $parent = $lssl[$sz-1];
+    stringArrayRemoveAtIndex($sz-1, $lssl);
+    
+    int $i;
+    for ($sel in $lssl){
+        // prefix source suffix find replace parent
+        $dups = `doDuplicateRenameParent
+            "" $sel ""
+            $fnd $rep
+            $parent
+            $mode`;
+        $items[$i++] = $dups[0];
+    }
+    return $items;
+}
+
+global proc string[] doDuplicateRenameParent(
+        string $pfx, string $lssl[], string $sfx,
+        string $fnd, string $rep,
+        string $parent,
+        int $keepcon){
+    print {"pfx: " + $pfx};
+    print {"sfx: " + $sfx};
+    print {"fnd: " + $fnd};
+    print {"rep: " + $rep};
+    print {"par: " + $parent};
+    // Duplicates given transform and renames it and 
+    //  all its childs with given data
+    //
+    // Args:
+    //  - parent, str - always full/long name
+
+    // duplicate
+    string $dups[];
+    if ($keepcon == 1)
+        $dups = `duplicate -ic -rr $lssl`;
+    else
+        if ($keepcon == 2)
+            $dups = `duplicate -un -rr $lssl`;
+        else
+            $dups = `duplicate -rr $lssl`;
+
+    if (size($dups) != size($lssl)){
+        print "  Duplicate results not equal";
+        delete $dups;
+        return $dups;
+    }
+    
+    for ($i=0; $i<size($dups); $i++){
+        $sel = $lssl[$i];
+        $dup = $dups[$i];
+        $bn = `substitute ".*|" $sel ""`;
+        // form new name
+        string $new_name = `substitute $fnd $bn $rep`;
+        $new_name = $pfx + $new_name + $sfx;
+        // check new name
+        string $chk_path = $parent + "|" + $new_name;
+        if (`objExists $chk_path`){
+            $msg = " ! Object already exists in target location:";
+            print {$msg + $chk_path};
+            return $dups;
+        }
+        // check current parent:
+        //  if current is not same as given - do parent
+        //  else just rename
+        string $ls_par[] = `listRelatives -f -p $sel`;
+        print {$parent + " <> " + $ls_par[0]};
+        if ($parent != $ls_par[0]){
+            if ($parent != "" && `objExists $parent`)
+                $cur_dups = `parent $dup $parent`;
+                $dup = $cur_dups[0];
+            // $bn = `substitute ".*|" $sel ""`;
+        }
+        $dup = `rename $dup $new_name`;
+        // string $newhi[] = {$dup};
+        // rename childrens too
+        string $lshi[] = `listRelatives -ad -type transform -pa $dup`;
+        int $n = 1;
+        //string $sl = $lssl[1];
+        for ($sl in $lshi){
+            print {"> " + $sl};
+            // rename
+            $pa = `match ".*|" $sl`;
+            $c_bn = `substitute $pa $sl ""`;
+            //toe_L_14_env
+            print {"pa: " + $pa};
+            print {"bn: " + $c_bn};
+            // substitute name parts
+            $replaced = `substitute $fnd $c_bn $rep`;
+            print {"rep: " + $rep};
+            //toetoe_L_FK_15_env14_env
+            $newn = $pfx + $replaced + $sfx;
+            print {"newn :" + $newn};
+            rename $sl $newn;
+        }
+    }
+    return $dups;
+}
+
+global proc string[] _doDuplicateRenameParent(
+        string $pfx, string $sel, string $sfx,
+        string $fnd, string $rep,
+        string $parent,
+        int $keepcon){
+    print {"pfx: " + $pfx};
+    print {"sfx: " + $sfx};
+    print {"fnd: " + $fnd};
+    print {"rep: " + $rep};
+    print {"par: " + $parent};
+    // Duplicates given transform and renames it and 
+    //  all its childs with given data
+    //
+    // Args:
+    //  - parent, str - always full/long name
+
+    // form new name
+
+    $bn = `substitute ".*|" $sel ""`;
+    string $new_name = `substitute $fnd $bn $rep`;
+    $new_name = $pfx + $new_name + $sfx;
+    // check new name
+    string $chk_path = $parent + "|" + $new_name;
+    if (`objExists $chk_path`){
+        $msg = " ! Object already exists in target location:";
+        print {$msg + $chk_path};
+        return {};
+    }
+    
+    // duplicate
+    string $dup[];
+    if ($keepcon == 1)
+        $dup = `duplicate -ic -rr $sel`;
+    else
+        if ($keepcon == 2)
+            $dup = `duplicate -un -rr $sel`;
+        else
+            $dup = `duplicate -rr $sel`;
+    
+    // check current parent:
+    //  if current is not same as given - do parent
+    //  else just rename
+    string $ls_par[] = `listRelatives -f -p $sel`;
+    print {$parent + " <> " + $ls_par[0]};
+    if ($parent != $ls_par[0]){
+        if ($parent != "" && `objExists $parent`)
+            $dup = `parent $dup[0] $parent`;
+        // $bn = `substitute ".*|" $sel ""`;
+    }
+    $dup[0] = `rename $dup[0] $new_name`;
+    string $newhi[] = {$dup[0]};
+
+    // rename childrens too
+    string $lshi[] = `listRelatives -ad -type transform -pa $dup[0]`;
+    int $n = 1;
+    //string $sl = $lssl[1];
+    for ($sl in $lshi){
+        print {"> " + $sl};
+        // rename
+        $pa = `match ".*|" $sl`;
+        $c_bn = `substitute $pa $sl ""`;
+        //toe_L_14_env
+        print {"pa: " + $pa};
+        print {"bn: " + $c_bn};
+        // substitute name parts
+        $replaced = `substitute $fnd $c_bn $rep`;
+        print {"rep: " + $rep};
+        //toetoe_L_FK_15_env14_env
+        $newn = $pfx + $replaced + $sfx;
+        print {"newn :" + $newn};
+        $newhi[$n++] = `rename $sl $newn`;
+    }
+    return $newhi;
+}
+
+global proc string inputButtons(string $msg, string $btns[]){
+
+    string $eval_cmd = `format -s $msg "confirmDialog -m \"^1s\" "`;
+    for ($btn in $btns)
+        $eval_cmd += `format -s $btn " -b \"^1s\""`;
+    $eval_cmd += " -b \"Cancel\" -db \"Cancel\"";
+    print {$eval_cmd};
+    $_inp = eval($eval_cmd);
+    return $_inp;
+}
+
+global proc string[] inputPfxSfx(){
+    
+    string $pfx, $sfx;
+    string $res[];
+    $_inp_pfx = `promptDialog
+        -m "Prefix Hierarchy"
+        -tx "proxy_"
+        -b "Ok" -b "Cancel"
+        -db "Ok" -cb "Cancel"`;
+    
+    if ($_inp_pfx != "Cancel"){
+        $res[0] = `promptDialog -q -tx`;
+        $_inp_sfx = `promptDialog
+            -m "Suffix Hierarchy"
+            -tx "_old"
+            -b "Ok" -b "Cancel"
+            -db "Ok" -cb "Cancel"`;
+        if ($_inp_sfx != "Cancel")
+            $res[1] = `promptDialog -q -tx`;
+    }
+    return $res;
+}
+
+global proc string[] inputFindReplace(){
+    string $fnd, $rep;
+    string $res[];
+    $_inp_fnd = `promptDialog
+        -m "Substitute find string"
+        -tx "_L_"
+        -b "Ok" -b "Cancel"
+        -db "Ok" -cb "Cancel"`;
+    
+    if ($_inp_fnd != "Cancel"){
+        $res[0] = `promptDialog -q -tx`;
+        $_inp_rep = `promptDialog
+            -m "Substitute replace string"
+            -tx "_R_"
+            -b "Ok" -b "Cancel"
+            -db "Ok" -cb "Cancel"`;
+        if ($_inp_rep != "Cancel")
+            $res[1] = `promptDialog -q -tx`;
+    }
+    return $res;
+}
+
+global proc string parhere(){
+    // parents near last selected object
+    $lssl = `ls -l -sl`;
+    $sz = size($lssl);
+    $trg = $lssl[$sz-1];
+
+    stringArrayRemoveAtIndex($sz-1, $lssl);
+    string $par[] = `listRelatives -p -f $trg`;
+    $sz_par = size($par);
+    $pos = `getOutlinerOrder $trg`;
+    int $p = 1;
+    int $i;
+    // $sel = $lssl[0]
+    for ($sel in $lssl){
+        string $cur_par[] = `listRelatives -p -f $sel`;
+        if ($par[0] != $cur_par[0]){
+            if ($sz_par){
+                $repar = `parent $sel $par[0]`;
+                $sel = $repar[0];
+            }
+            else
+                parent -w $sel;
+        }
+        
+        reorder -b $sel;
+        reorder -r ($pos + $p) $sel;
+        $lssl[$i] = $sel;
+        $p++;
+        $i++;
+    }
+    select $lssl;
+    return $par[0];
+}
+
+global proc int getOutlinerOrder(string $sel){
+    // reorder in outliner
+    // better to use fool path in $sel
+    // returns int position from top, 1-based
+    // eg: if child is is 0(top) returns 1
+
+    // string $sel_p[] = `ls -l $sel`;
+    // $sel = $sel_p[0];
+    string $par;
+    if (`gmatch $sel "*|*"`){
+        $trim = `substitute "[^|]+$" $sel ""`;
+        if (size($trim) > 1)
+            $par = $trim;
+    }
+    else{
+        $ls_par = `listRelatives -f -p $sel`;
+        if (size($ls_par))
+            $par = $ls_par[0];
+    }
+    print {"parentfound: " + $par};
+    string $childs[];
+    if ($par != "")
+        $childs = `listRelatives -f -c $par`;
+    else{
+        $childs = `ls -l -as`;
+    }
+    $pos = stringArrayFind($sel, 0, $childs);
+    // $par_res = `parent $res $par`;
+    // $src = $par_res[0];
+    // reorder -r (1 + $pos) $src;
+    print {$sel + " : " + $pos};
+    return ($pos + 1);
+}

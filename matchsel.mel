@@ -1,0 +1,8 @@
+global proc matchsel(string $fnd, string $sub){
+    $lssl = `ls -sl`;
+    string $items[];
+    int $i;
+    for ($sel in $lssl){
+        $items[$i++] = `substitute $fnd $sel $sub`;
+    }
+}

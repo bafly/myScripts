@@ -1,0 +1,120 @@
+// will not work if:
+//   |grpa|wat
+//   |grpb|wat|wat
+// will work:
+//   |grpa|wat
+//   |grpb|wat
+//   |wat|grpa|wat
+//   |wat|grpb|wat
+
+global proc string[] pairedsel(){
+    
+    global string $_baPfxs[];
+
+    $lssl = `ls -l -sl`;
+    string $pfxs[] = $_baPfxs;
+    
+    // if item gourps not initialized
+    //      current selection will be used to do this or
+    //      if nothing is selected legacy pfxs will be used
+    //      proc will end on itnialization's end
+    // selection is ordered
+    if (!size($_baPfxs)){
+        pairedsel_load($lssl);
+        print "  <i>  Loading gourps:\n";
+        print $_baPfxs;
+        return {};
+    }
+    string $sel;
+    string $items[];
+    for ($sel in $lssl){
+        appendStringArray($items, {$sel}, 1);
+        string $pairs[] = getPairedSelection($sel, $pfxs);
+        appendStringArray($items, $pairs, size($pairs));
+    }
+    select `ls $items`;
+    return $items;
+}
+
+global proc string[] getPairedSelection(string $sel, string $pfxs[]){
+ 
+    string $items[];
+    string $curpfx = `substitute "|[^|]+$" $sel ""`;
+    int $i;
+    // $src_sfx = "";
+    for ($pfx in $pfxs){
+        if ($curpfx == $pfx)
+            continue;
+        $bname = `match "[^|]+$" $sel`;
+        $pair = $pfx + "|" + $bname;
+        $items[$i++] = $pair;
+    }
+    return $items;
+}
+
+global proc string[] pairedsel_load(string $lssl[]){
+
+    global string $_baPfxs[];
+    
+    string $legacy_pfxs[]  = {
+        "geo",
+        "geo_proxy",
+        "geo_dummy"
+    };
+    $pfxs = `ls -l -r 1 $legacy_pfxs`;
+    $_baPfxs = $lssl;
+    if (!size($lssl)){
+        $_baPfxs = $pfxs;
+        if (!size($pfxs)){
+            $_baPfxs = $legacy_pfxs;
+            print("  <!>  Nothing is selected, "
+                + "legacy geometry goups not found\n");
+        }
+    }
+    
+    return $_baPfxs;
+}
+
+global proc string curpfx(string $sel){
+
+    return `substitute "|[^|]+$" $sel ""`;
+}
+
+global proc string[] pairedsel_getpfxs(){
+
+    return `ls -l -sl`;
+}
+
+global proc string matchfind( string $sel, string $pfx ){
+
+    $basename = `match "[^|]+$" $sel`;
+    $matchit = `match ("^.+" + $basename) $sel`;
+
+    $pair = $pfx + "|" + $matchit;
+
+    return $pair;
+}
+
+global proc string[] get_pairs_database(string $grps[]){
+
+    // first item from groups will be used as initial pairs
+    string $items[];
+
+    if (!size($grps))
+        $grps = pairedsel_load({});
+
+    $exclude_types = {
+        "sim_*"
+    };
+    $init = `ls -dag -type mesh $grps[0]`;
+    $excl = `ls -dag $exclude_types`;
+    stringArrayRemove($excl, $init);
+    print $excl;
+    print $init;
+    stringArrayRemove({$grps[0]}, $grps);
+
+    for ($grp in $grps){
+        print $grp;
+    }
+    return $items;
+}

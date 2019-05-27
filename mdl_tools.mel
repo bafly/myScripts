@@ -1,0 +1,89 @@
+//0.1b -new- getuvtex(), setuvtex()
+//0.1a -new- doPairedBlendShape - creates blendshape 
+//              on given paired list(paris:0-1, 2-3..etc)
+
+//cleanIsolatedComps("geo")
+global proc int cleanIsolatedComps(string $root){
+    /* Clean unused vertices, edges on meshes
+    Returns: false(0) on success
+    Usage: cleanIsolatedComps "original";
+    */
+    
+    string $f_items[];  // failed items
+    string $all_mesh[] = `listRelatives -f -ad -c -type mesh $root`;
+    int $sz = `size $all_mesh`;
+    int $w, $f; // washed, failed counters
+    for ($se in `listRelatives -f -p $all_mesh`){
+        print {" poly washing: " + $se};
+        $res = catchQuiet(
+            `polyClean -ch 0
+                -cleanVertices 1
+                -cleanEdges 1
+                -cleanPartialUVMapping 0
+                $se`
+        );
+        if ($res)
+            $f_items[$f++] = $se;
+        else
+            $w++;
+    }
+    print (`format -s $sz -s $w "| Processed: ^2s/^1s\n"`);
+    print (`format -s $sz -s $w "| Failed:\n"`);
+    print $f_items;
+    return ($sz != $w);
+}
+
+global proc string[] doPairedBlendShape(
+        string $lssl[]){
+    // lssl - paired list array:
+    //      0 - target, 1 - source(child)
+    if (!size($lssl)){
+        $lssl = `ls -sl`;
+    }
+    string $items[];
+    $b = 0;
+    string $src, $trg;
+    for ($i=0; $i<size($lssl); $i++){
+        $src = $lssl[$i++];
+        $trg = $lssl[$i];
+        // help blendShape
+        $bs_data = `blendShape -en 1 -w 0 1 $src $trg`;
+        print $bs_data;
+        $items[$b++] = $bs_data[0];
+    }
+    return $items;
+}
+
+global proc getuvtex(){
+    // get uv texel for selected uv
+    global float $gBaUVtex;
+    $map_sz = `optionVar -q polyUVTexelDensityMapSize`;
+    $gBaUVtex = `texGetTexelDensity $map_sz`;
+    headsUpMessage -uve 1 $gBaUVtex;
+}
+
+global proc setuvtex(){
+    // set texel density for selected uv
+    global float $gBaUVtex;
+    $map_sz = `optionVar -q polyUVTexelDensityMapSize`;
+    $_usr = `promptDialog -tx $gBaUVtex`;
+    if ($_usr != "dismiss"){
+        float $val = `promptDialog -q -tx`;
+        print $val;
+        texSetTexelDensity $val $map_sz;
+        $gBaUVtex = $val;
+    }
+}
+
+global proc pcomb(){
+    // combine to last selected geometry
+    string $lssl[] = `ls -sl`;
+    $ls_sz = size($lssl);
+    $trg = $lssl[$ls_sz-1];
+    $bn = `match "[^|]+$" $trg`;
+    $ls_par = `listRelatives -f -p $trg`;
+    $combined = `polyUnite -ch 0 -op`;
+    if (size($ls_par))
+        parent $combined[0] $ls_par[0];
+    rename $combined[0] $bn;
+}

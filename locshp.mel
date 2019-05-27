@@ -1,0 +1,6 @@
+global proc locshp(){
+    $_lssl = `ls -sl`;
+    for ($sel in $_lssl)
+        createNode -n ($sel + "Shape") locator -p $sel;
+    select $_lssl;
+}

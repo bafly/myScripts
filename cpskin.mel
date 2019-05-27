@@ -1,0 +1,157 @@
+//v0.1a upd insert getjnts:doSkin_to()
+
+source getjnts;
+
+global proc int cpskin(){
+    // select skinClusters or bind shapes 
+    $pts = -1;
+    string $lssl[] = `ls -sl`;
+    if (size($lssl) != 2)
+        return $pts;
+    $src = $lssl[0];
+    stringArrayRemoveAtIndex(0, $lssl);
+    $src_scl = findSkinCluster($src);
+    if ($src_scl == "")
+        return -1;
+    string $src_skin_data[] = getbinds({$src});
+    string $src_jnts[] = stringToStringArray($src_skin_data[0], " ");
+    string $trg_scls[];
+    int $t;
+    for ($sel in $lssl){
+        $scl = findSkinCluster($sel);
+        if ($scl == ""){
+            $_inp = `confirmDialog
+                -m "Not Found, create skinCluster?"
+                -b "Create" -b "No" -b "Cancel" -cb "Cancel"`;
+            if ($_inp == "Cancel")
+                return -1;
+            else
+                if ($_inp == "No")
+                    continue;
+            print "Binding joint: ";
+            print $src_jnts;
+            print {"To:  " + $sel};
+            $ls_scl = doSkin_to($src_jnts, {$sel});
+            if (!size($ls_scl)){
+                print {"  ! Can't create skinCluster " + $sel};
+                continue;
+            }
+            $scl = $ls_scl[0];
+        }
+        if ($scl != "")
+            $trg_scls[$t++] = $scl;
+
+    }
+    /*
+    string $sclusts[] = `ls -type skinCluster $lssl`;
+    if (size($sclusts) != 2){
+        int $s;
+        for ($sel in $lssl){
+            string $sclust = findRelatedSkinCluster($sel);
+            if ($sclust == ""){
+                print `format -s $sel "No skinCluster is found on {^1s}"`;
+                return $pts;
+            }
+            $sclusts[$s++] = $sclust;
+        }
+        $lssl = $sclusts;
+    }
+    */
+    $pts = doCpSkin($src_scl, $trg_scls);
+    return $pts;
+}
+
+global proc string findSkinCluster(string $sel){
+
+    string $sclust = $sel;
+    if (!`objectType -i skinCluster $sel`)
+        $sclust = findRelatedSkinCluster($sel);
+    return $sclust;
+}
+
+global proc int doCpSkin(string $src, string $lssl[]){
+
+    int $pts;
+    if (size($lssl) != 2)
+        return 0;
+    string $a, $b;
+    $a = $src;
+    for ($b in $lssl){
+        doCopyInfs($a, $b);
+        // doCopyBP($a, $b);
+        // doCopyBPM($a, $b);
+        $pts += doCopySkinNode($a, $b);
+    }
+    return $pts;
+}
+
+
+global proc int doCopySkinNode(string $a, string $b){
+    
+    int $res;
+
+    python("import cloneskin");
+    $res = python(`format 
+        -s $a
+        -s $b 
+        "cloneskin.doIt(\"^1s\", \"^2s\")"`);
+    return $res;
+
+}
+
+//$a = "skinCluster2"
+//$b = "R:skinCluster67"
+//doCopyInfs $a $b
+global proc doCopyInfs(string $a, string $b){
+    
+    string $la[] = `listAttr -m ($b + ".ma")`;
+    int $last = match("[0-9]+", $la[size($la)-1]);
+    for($i=0; $i<=$last; $i++){
+        $a_plg = `format -s $a -s $i "^1s.matrix[^2s]"`;
+        $b_plg = `format -s $b -s $i "^1s.matrix[^2s]"`;
+        $ls_jnt = `listConnections -s 1 -d 0 -p 1 -type joint $a_plg`;
+        if (!size($ls_jnt)){            
+            $ls_con = `listConnections -s 1 -d 0 -p 1 -type joint $b_plg`;
+            if (size($ls_con)){
+                print "disconnecting\n";
+                eval(`format -s $ls_con[0] -s $b_plg "disconnectAttr ^1s ^2s"`);
+            }
+        }
+        else{
+            if (!`isConnected $ls_jnt[0] $b_plg`){
+                print "connecting\n";
+                eval(`format -s $ls_jnt[0] -s $b_plg "connectAttr -f ^1s ^2s"`);
+            }
+        }
+    }
+}
+global proc doCopyBPM(string $a, string $b){
+    // bindPreMatrix
+    $sz = `getAttr -s ($a+".pm")`;
+    $attrs = `listAttr -m ($a+".pm")`;
+    // $at = $attrs[0]
+    for ($at in $attrs){
+        $a_plg = $a + "." + $at;
+        $b_plg = $b + "." + $at;
+        float $m[16] = `getAttr $a_plg`;
+        setAttr -type "matrix" $b_plg 
+            $m[0] $m[1] $m[2] $m[3]
+            $m[4] $m[5] $m[6] $m[7]
+            $m[8] $m[9] $m[10] $m[11]
+            $m[12] $m[13] $m[14] $m[15]
+            ;
+    }
+}
+
+//doCopyBP $a $b;
+global proc doCopyBP(string $a, string $b){
+    // copy bindPose
+    $a_plg = $a + ".bp";
+    $ls_bp = `listConnections -s 1 -d 0 $a_plg`;
+    if (!size($ls_bp))
+        return;
+    $b_plg = $b + ".bp";
+    $bp_plg = $ls_bp[0]+".msg";
+    if (!isConnected($bp_plg, $b_plg))
+        connectAttr -f $bp_plg $b_plg;
+}

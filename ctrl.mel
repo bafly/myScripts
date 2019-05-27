@@ -1,0 +1,119 @@
+//v0.1b -new- strip_name(), mkCtrl()
+//      -upd- ctrl()
+//v0.1a
+// TODO
+
+global proc string[] ctrl(int $isSfx){
+    // select env(joints)
+    $grp_tag = "CTRLgrp";
+    $ctrl_tag = "CTRL";
+    $grp_f = "^1s_^2s";
+    $ctrl_f = "^1s_^2s";
+    if ($isSfx){
+        $grp_n = "^2s_^1s";
+        $ctrl_n = "^2s_^1s";
+    }
+
+    int $i;
+    string $items[];
+    $lssl = `ls -tr -sl`;
+    if (size($lssl))
+        for ($sel in $lssl){
+            $base_n = getBaseName($sel, "env");
+            $grp_n = `format -s $base_n -s $grp_tag $grp_f`;
+            $ctrl_n = `format -s $base_n -s $ctrl_tag $ctrl_f`;
+            $grp = `group -em -n $grp_n`;
+            $ctrl = `group -em -n $ctrl_n`;
+            mkCubeShape($ctrl);
+            parent -r $ctrl $grp;
+            matchTransform $grp $sel;
+            parent $sel $ctrl;
+            // TODO: keyframe
+            // setKeyframe 
+            $items[$i++] = $ctrl;
+        }
+    else
+        $items[$i] = mkCtrl("", $isSfx);
+    return $items;
+}
+
+global proc string mkCtrl(string $sel, int $isSfx){
+    // select env(joints)
+    $grp_tag = "CTRLgrp";
+    $ctrl_tag = "CTRL";
+    $grp_f = "^2s_^1s";
+    $ctrl_f = "^2s_^1s";
+    $pos = 0;
+    if ($isSfx){
+        $pos = -1;
+        $grp_f = "^1s_^2s";
+        $ctrl_f = "^1s_^2s";
+    }
+    $base_n = strip_name($sel, $pos);
+    $grp_n = `format -s $base_n -s $grp_tag $grp_f`;
+    $ctrl_n = `format -s $base_n -s $ctrl_tag $ctrl_f`;
+    $grp = `group -em -n $grp_n`;
+    $ctrl = `group -em -n $ctrl_n`;
+    mkCubeShape($ctrl);
+    parent -r $ctrl $grp;
+    if (`objExists $sel`){
+        matchTransform $grp $sel;
+        parent $sel $ctrl;
+    }
+    return $ctrl;
+}
+
+global proc string strip_name(string $sel, int $pos){
+    // tag with given position will be removed from name:
+    // >> strip_name("joint1_L_env", 1);
+    // >> "joint1_env"
+    $sep = "_";
+    $spl = stringToStringArray($sel, $sep);
+    $sz = size($spl);
+    $idx = $pos;
+    if ($pos<0)
+        $idx = $sz + $pos;
+    print {"p: " + $idx};
+    stringArrayRemoveAtIndex($idx, $spl);
+    $clean = stringArrayToString($spl, $sep);
+    return $clean;
+}
+
+global proc string getBaseName(string $name, string $find){
+    
+    global string $_gSep;
+    if ($_gSep == "")
+        $_gSep = "_";
+    $short_n = `match "[^|]+$" $name`;
+    $base_n = `match "[^:]+$" $short_n`;
+
+    $strip = stringToStringArray($base_n, $_gSep);
+    $fnd_i = stringArrayFind($find, 0, $strip);
+    stringArrayRemoveAtIndex($fnd_i, $strip);
+
+    string $clean_n = stringArrayToString($strip, $_gSep);
+    return $clean_n;
+}
+
+global proc string mkZeroShape(string $sel){
+    $bn = `getBaseName $sel ""`;
+    $shp = `createNode -n ($bn + "Shape") nurbsCurve -p $sel`;
+    return $shp;
+}
+
+global proc string mkCubeShape(string $sel){
+    $bn = `getBaseName $sel ""`;
+    $shp = `createNode -n ($bn + "Shape") nurbsCurve -p $sel`;
+    setAttr ($shp + ".cached")
+        -type "nurbsCurve" 
+            1 4 0 no 3
+            5 0 0.25 0.5 0.75 1
+            5
+            0.97871376397667464 1.7142396557839032 -3.4568957313574931
+            0.97871376397667464 -1.714239548311006 -3.4568957313574931
+            -0.97871376397660059 -1.7142395483110067 -3.4568957313574913
+            -0.97871376397660059 1.7142396557839028 -3.4568957313574931
+            0.97871376397667409 1.714239655783903 -3.4568957313574895
+        ;
+    return $shp;
+}

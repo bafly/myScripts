@@ -1,0 +1,91 @@
+//v0.1a -upd- strik - add multiplyDivide for master scale 
+//      -new- ikh_mkscale
+//v0.0
+
+global proc string[] ikhData(string $ikh){
+    
+    // 0 - root joint
+    // 1 - end(tip) joint    
+    // 2 - effector
+    
+    string $root = `ikHandle -q -sj $ikh`;
+    string $eff = `ikHandle -q -ee $ikh`;
+    string $ls_end[] = `listConnections 
+        -s 1 -d 0 
+        ($eff+".tx") ($eff+".ty") ($eff+".tz")`;
+    
+    return {$root, $ls_end[0], $eff};
+}
+
+global proc string strik(){
+
+    string $ikh;
+    string $lsikh[] = `ls -sl -type ikHandle`;
+    if (!size($lsikh))
+        $lsikh = `ikHandle -sol ikSCsolver`;
+    $ikh = $lsikh[0];
+    $ikh_data = ikhData($ikh);
+
+    $root = $ikh_data[0];
+    $tip = $ikh_data[1];
+    
+    // distance driver
+    $eff = $ikh_data[2];
+    $d = `distanceMod $ikh $root`;
+    // master scale
+    $md = `createNode multiplyDivide -n "md_distance_masterScale#"`;
+    setAttr ($md + ".i2") 1 1 1;
+    setAttr ($md + ".op") 2;
+    connectAttr -f $d ($md+".i1x");
+    connectAttr -f ($md+".ox") ($tip+".tx");
+
+    if (`isConnected ($tip+".tx") ($eff+ ".tx")`)
+        disconnectAttr ($tip+".tx") ($eff+ ".tx");
+    setAttr ($ikh + ".hsh") 0;
+
+    select $ikh;
+    return $ikh;   
+}
+
+global proc string distanceMod(string $a, string $b){
+    
+    $db_nm = `format -s $a -s $b "db_^1s_TO_^2s"`;
+    
+    // check if already exists
+    $ch_a = `listConnections -s 0 -d 1 -type distanceBetween $a`;
+    $ch_b = `listConnections -s 0 -d 1 -type distanceBetween $b`;
+    string $db, $ch_db;
+    for ($ca in $ch_a)
+        for ($cb in $ch_b)
+            if ($ca == $cb)
+                $db = $ca;
+    if ($db == ""){
+        $db = createNode("-n", $db_nm, "distanceBetween");
+        connectAttr ($a+".wm[0]") ($db + ".im1");
+        connectAttr ($b+".wm[0]") ($db + ".im2");
+    }
+    
+    return $db+".d";
+}
+
+global proc ikh_mkscale(string $srt){
+    $ls_ikh = `ls -sl -type ikHandle`;
+    $ls_db  = `listConnections -type distanceBetween $ls_ikh`;
+    // $sel = $lssl[0];
+    if ($srt == "")
+        $srt = `group -em -n "masterScale#"`;
+    string $items[];
+    int $i;
+    for ($sel in $ls_db){
+        $outs = `listConnections -s 0 -d 1 -p 1 ($sel + ".d")`;
+        if ( objectType("-i", "multiplyDivide", (`plugNode($outs[0])`)) )
+            continue;
+        $md = `createNode multiplyDivide -n "md_distance_masterScale#"`;
+        setAttr ($md + ".op") 2;
+        connectAttr ($sel + ".d") ($md + ".i1x");
+        connectAttr ($srt + ".s") ($md + ".i2");
+        connectAttr -f ($md + ".ox") ($outs[0]);
+        $items[$i++] = $md;
+    }
+    select $items;
+}

@@ -1,0 +1,84 @@
+global proc int initIKFK(){
+    $msgs = {
+        "ikUpCtrl",
+        "ikEffCtrl",
+        "fkACtrl",
+        "fkBCtrl",
+        "fkEffCtrl",
+        "snapFKA",
+        "snapFKB",
+        "snapFKEff"
+    };
+    
+    $lssl = `ls -sl`;
+    $sz = size($lssl);
+    if ($sz != 6){
+        confirmDialog 
+            -m "Select order(6 items):\nikUpVector, ikEffector, fkA, fkB, fkEffector, ikfkSwitcher"
+            -t "IK FK initialize";
+        return 1;
+    }
+    $ikUpCtrl = $lssl[0];
+    $ikEffCtrl = $lssl[1];
+    $fkACtrl = $lssl[2];
+    $fkBCtrl = $lssl[3];
+    $fkEffCtrl = $lssl[4];
+    $slv = $lssl[5];
+    stringArrayRemoveAtIndex(5, $lssl);
+
+    // cretae solver attr on controls
+    $i = 0;
+    $ctrl_at = "ikfkSolver";
+    // $sel = $lssl[0]
+    for ($sel in $lssl){
+        $ctrl_plg = $sel + "." + $ctrl_at;
+        if (!`objExists $ctrl_plg`)
+            addAttr -at "message" -ln $ctrl_at $sel;
+        
+        $slv_at = $msgs[$i++];
+        $slv_plg = $slv + "." + $slv_at;
+        if (!`objExists $slv_plg`)
+            addAttr -at message -ln $slv_at $slv;
+        if (!isConnected($ctrl_plg, $slv_plg))
+            connectAttr -f $ctrl_plg $slv_plg;
+    }
+    return 0;
+}
+
+global proc int initSnaps(){
+    // select snaps and last solver
+    $msgs = {
+        "snapFKA",
+        "snapFKB",
+        "snapFKEff"
+    };
+    
+    $lssl = `ls -sl`;
+    $sz = size($lssl);
+    if ($sz != 4){
+        confirmDialog 
+            -m "Select order(4 items):\ntarget/snapFKA, target/snapFKB, target/sbapFKEff, ikfkSwitcher"
+            -t "IK FK initialize snap";
+        return 1;
+    }
+    $snapFKA = $lssl[0];
+    $snapFKB = $lssl[1];
+    $snapFKC = $lssl[2];
+    $slv = $lssl[3];
+    stringArrayRemoveAtIndex(3, $lssl);
+    
+    // cretae msgs attr on solver and connect targets/snaps
+    $i = 0;
+    // $sel = $lssl[0]
+    for ($sel in $lssl){
+        $ctrl_plg = $sel + ".msg";
+        
+        $slv_at = $msgs[$i++];
+        $slv_plg = $slv + "." + $slv_at;
+        if (!`objExists $slv_plg`)
+            addAttr -at message -ln $slv_at $slv;
+        if (!isConnected($ctrl_plg, $slv_plg))
+            connectAttr -f $ctrl_plg $slv_plg;
+    }
+    return 0;
+}

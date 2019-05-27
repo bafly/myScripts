@@ -1,16 +1,50 @@
+//v0.1a upd  miryz(), doParentToMirror() - add global var
+//v0.1a upd  _getOther - swap fnd and rep if not exists
+//v0.1
+
+int $_CHK_SRC = catchQuiet(eval("source here"));
+print $_CHK_SRC;
+if ($_CHK_SRC) print " ! can't find sources\n";
+
 global proc string _getOther(string $sel, string $fnd, string $rep, int $mirror){
     string $other;
     if ($fnd == "")
-        $fnd = "_L";
+        $fnd = "_L_";
     if ($rep == "")
-        $rep = "_R";
+        $rep = "_R_";
     $bn = `match "[^|]+$" $sel`;
-    $find_other = `substitute $fnd $bn $rep`;
-    if (`objExists $find_other`)
+    string $find_other = `substitute $fnd $bn $rep`;
+    print {" _getOther.resultA: " + $find_other};
+    if ($find_other == $bn){
+        print " _getOther: Swapping side tags\n";
+        $find_other = `substitute $rep $bn $fnd`;
+        print {" _getOther.resultB: " + $find_other};
+    }
+    
+    if (`objExists $find_other`){
+        print " _getOther: succsess!\n";
         $other = $find_other;
+    }
     else{
+        print " _getOther: creating other\n";
         if ($mirror){
-            $other = `group -em -n $find_other`;
+            // $other = `group -em -n $find_other`;
+            // duplicate, rename and rename:
+            //      pfx, sel, sfx, find, replace, parent, keepInputConnections
+            string $pfx = "";
+            string $sfx = "";
+            string $par = "";
+            int $keepcon = 0;
+            print (`format 
+                -s $pfx -s $sel -s $sfx
+                -s $fnd -s $rep -s $par -s $keepcon 
+                "\n>> ^1s, ^2s, ^3s, ^4s, ^5s, ^6s, ^7s\n"`);
+            $ls_dup = doDuplicateRenameParent(
+                "", {$sel}, "", 
+                $fnd, $rep,
+                "", 0);
+            // delete
+            $other = $ls_dup[0];
             vector $par_pos = `xform -q -ws -rp $sel`;
             vector $par_rot = `xform -q -ws -ro $sel`;
             $res = `doMirYZ $other $par_pos $par_rot`;
@@ -20,6 +54,13 @@ global proc string _getOther(string $sel, string $fnd, string $rep, int $mirror)
     return $other;
 }
 global proc string[] miryz(){
+    global string $gSides[];
+    $lside = "_L_";
+    $rside = "_R_";
+    if (size($gSides) == 2){
+        $lside = $gSides[0];
+        $rside = $gSides[1];
+    }
     string $items[];
     string $lssl[] = `ls -sl`;
     vector $pos;
@@ -34,12 +75,12 @@ global proc string[] miryz(){
         $ls_par = `listRelatives -p -f $sel`;
         $pos = `xform -q -ws -rp $sel`;
         $rot = `xform -q -ws -ro $sel`;
-        $find_other = `_getOther $sel "" "" 1`;
+        $find_other = `_getOther $sel $lside $rside 1`;
         if ($find_other == "")
             continue;
         $other = $find_other;
         if (size($ls_par)){
-            $par = `_getOther $ls_par[0] "" "" 0`;
+            $par = `_getOther $ls_par[0] $lside $rside 0`;
             if ($par == "")
                 $par = $ls_par[0];
             $ls_cur_par = `listRelatives -p -f $other`;
@@ -77,4 +118,56 @@ global proc int doMirYZ(string $sel, vector $pos, vector $rot){
     if (!$res)
         print ":D\n";
     return $res;
+}
+
+global proc string[] mirpar(){
+    string $res;
+    string $items[];
+    $lssl = `ls -sl`;
+    int $i;
+    for ($sel in $lssl){
+        $res = doParentToMirror($sel);
+        if ($res != "")
+            $items[$i++] = $res;
+    }
+    // bcs of process in the end last item is selected
+    //  to be more meaningfull select all resutls
+    select $items;
+    return $items;
+}
+
+global proc string doParentToMirror(string $sel){
+    global string $gSides[];
+    $lside = "_L_";
+    $rside = "_R_";
+    if (size($gSides) == 2){
+        $lside = $gSides[0];
+        $rside = $gSides[1];
+    }
+    string $res[];
+    // parents to found other side
+    $ls_par = `listRelatives -p -f $sel`;
+    // $pos = `xform -q -ws -rp $sel`;
+    // $rot = `xform -q -ws -ro $sel`;
+    $find_other = `_getOther $sel $lside $rside 1`;
+    if ($find_other == ""){
+        print {"  ! Nothing found to parent"};
+        return "";
+    }
+    $other = $find_other;
+    print {" _doParentToMirror:other = " + $other};
+    if (size($ls_par)){
+        $other_par = `_getOther $ls_par[0] $lside $rside 0`;
+        if ($other_par == "")
+            $other_par = $ls_par[0];
+        string $ls_long_cur_par[] = `listRelatives -p -f $other`;
+        string $ls_long_par[] = `ls -l $other_par`;
+        print {$ls_long_cur_par[0] + " <>\n" + $ls_long_par[0]};
+        if ($ls_long_cur_par[0] != $ls_long_par[0])
+            $res = `parent $other $other_par`;
+    }
+    else{
+        $res = `parent -w $other`;
+    }
+    return $res[0];
 }

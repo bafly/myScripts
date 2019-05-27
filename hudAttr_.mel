@@ -1,0 +1,213 @@
+// based on autodesk example for hudSlider
+// creates hud sliders for moving objects without selecting them
+//
+
+// usage(using 5th slots all first 4 blocks, by default):
+//      select any objects and attributes in cb and run:
+//          > hudAttr();
+//      
+//      to reset (button with initial value) - press button
+//      to delete all sliders - selecto nothing and run again
+//      ! transformation edits not sotre in undo pool
+
+// TODO:
+//      - setValueSlider: array with default values as arg
+//        for multiple dags
+//      - multitoggling slider buttons for stepping values 
+//
+
+// (c) rigga from home-pc, flexile.rigging@gmail.com
+
+source keyed;
+
+global int $gHUDAttrIDS[];
+
+global proc string[] hudAttr(float $max){
+
+    global int $gHUDAttrIDs[];
+    
+    string $plgs[];
+    string $lssl[] = `ls -sl`;
+    
+    if (!size($lssl)){
+        $hud_sz = size($gHUDAttrIDs);
+        if ($hud_sz){
+            for ($id in $gHUDAttrIDs)
+                headsUpDisplay -rid $id;
+            print (`format -s $hud_sz "\n  <i>  HUDs removed: ^1s\n"`);
+        }
+    }
+    else{
+
+        $lscb = `channelBox -q -sma mainChannelBox`;
+        $lscb = stringArrayCatenate(`channelBox -q -ssa mainChannelBox`, $lscb);
+        $lscb = stringArrayCatenate(`channelBox -q -sha mainChannelBox`, $lscb);
+        int $p;
+        for ($sel in $lssl){
+            for ($a=0; $a<size($lscb);$a++){
+                $at = $lscb[$a];
+                $plg = $sel + "." + $lscb[$a];
+                $msg = ":: " + $plg;
+                if (`size $plg`){
+                    $plgs[$p++] = $plg;
+                    $msg += " ::[ok]";
+                }
+                print($msg+"\n");
+            }
+        }
+        // print $plgs;
+    }
+    doHUDAttr($plgs, -1*$max, $max);
+    return $plgs;
+}
+
+global proc int[] doHUDAttr(string $plugs[], float $min, float $max){
+    
+    global int $gHUDAttrIDs[];
+
+    if (!size($plugs)){
+        $hud_sz = size($gHUDAttrIDs);
+        if ($hud_sz){
+            for ($id in $gHUDAttrIDs)
+                headsUpDisplay -rid $id;
+            print (`format -s $hud_sz "\n  <i>  HUDs removed: ^1s\n"`);
+        }
+    }
+
+    int $hud_id;
+    float $dv;    // hud sliders counter
+    int $l = 8;    // hud sliders limit
+    int $s = 5;    // hud slider sectoin
+    int $b = 0;        // hud slider block slot. maybe $h == $b
+    int $p;         // counter for plugs
+    int $hud_ids[];
+    // int $min = -140;
+    // int $max = 140;
+    
+    string $huds[];     // names of new sliders
+    // string $plugs[];    // node.attr array
+    string $plg_vals[];
+
+    $p = 0;
+
+    // check hud table and plug avaliability
+    for ($plg in $plugs){
+        
+        $sl = plugNode($plg);
+        $at = plugAttr($plg);
+
+        if ($b > $l){
+            print "\n  <!>  Reached limit of HUD block size\n";
+            break;
+        }
+        
+        /*
+        // pointless. disabling..
+        if (!`objectType -isa "transform" $sl`){
+            print (`format -s $sl "\n  <i>  Wrong dag type ^1s\n"`);
+            continue;
+        }
+        */
+
+        // save data        
+        if(`attributeExists $at $sl`){
+            $dv = `getAttr $plg`;
+            $plg_vals[$p] = string($dv);
+            $plugs[$p++] = $plg;
+        }
+        // no need to create named slider, but.. just let it be
+        //print $hud;
+        else{
+            print (`format -s $plg "\n  <i>  Plug not found: ^1s\n"`);
+            continue;
+        }
+    
+        $hud = `format -s $at -s (++$b) "hudSlider^1sBtn^2s"`;
+        // remove ahead
+        headsUpDisplay -e -rp $s $b;
+        //$min = $dv - 90;
+        //$max = $dv + 90;
+        $hud_id = hudSliderButton(
+            "-s", $s,
+            "-b", $b,
+            "-sl", $at,
+            "-t", "float",
+            "-min", $min,
+            "-max", $max,
+            "-v", 0,
+            "-slw", 14,
+            "-vw", 15,
+            "-sln", 100,
+            "-si", 0.1,
+            "-dp", 2,
+            "-bl", $dv,
+            "-bw", 16,
+            //"-bsh", "roundRectangle",
+            "-bsh", "rectangle",
+            $hud
+        );
+        $huds[$b-1] = $hud;
+        $hud_ids[$b-1] = $hud_id;
+        $plugs_s = stringArrayToString({$plg}, "\", \"");
+        $cmd = "setValueSlider(\"^1s\", {\"^2s\"}, ^3s);";
+        $rst_cmd = "hudSliderButton -e -v ^4s ^1s;"+$cmd;
+        $eval = `format -s $hud -s $plugs_s -s $dv $cmd`;
+        $eval_rst = `format -s $hud -s $plugs_s -s $dv -s 0 $rst_cmd`;
+        print ("  cmd: " + $eval + "\n");
+        print ($plugs_s + "\n");
+        hudSliderButton -e
+                  -brc $eval_rst
+                  -spc $eval
+                  -sdc $eval
+                  -src $eval
+                  $hud
+        ;
+        
+    }
+
+    //return $b;
+    //print "\n";
+    //print $b;
+    $gHUDAttrIDs = $hud_ids;
+    
+    return $hud_ids;
+}
+
+// modified exmaple from autodesk
+global proc setValueSlider( string $HUD, string $dags[], float $dv )
+{
+    // Since undo is not turned off automatically, we must
+    // do it ourselves. The HUD will fire off many calls to this
+    // procedure during a drag so we don't want to overwhelm undo
+    // queue.
+    //
+    //float $value = $HUD == "" ? $dv : `hudSliderButton -q -v $HUD`;
+    float $value = `hudSliderButton -q -v $HUD`;
+    
+    //print (`format -s $HUD "  HUD: ^1s\n"`);
+    undoInfo -swf false;
+    int $numItems = size($dags);
+    for( $i = 0; $i < $numItems; $i++ )
+    {
+        string $plug = $dags[$i];
+        /*
+        // it make no sense. disabling....
+        if( `objectType -isAType "transform" $plug` ){
+            //print ("  plg: " + $plug + "\n");
+            setAttr $plug ($dv + $value);
+        }
+        */
+        setAttr $plug ($dv + $value);
+    }
+    // Re-enable the undo queue.
+    //
+    undoInfo -swf true;
+}
+
+global proc hudKAttr(){
+
+    $lssl = `ls -sl`;
+
+    $keyed = doGetKeyed($lssl);
+    doHUDAttr($keyed, -140, 140);
+}

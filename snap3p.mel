@@ -1,0 +1,287 @@
+//v0.0
+
+//### Align objects by three points
+//  > idea: my college Vanya from DA-studio
+
+// math tools //
+global proc matrix get_id_mat(){
+    // returns identity matrix
+    matrix $I[4][4];
+    for ($i=0; $i<4; $i++)
+        for ($j=0; $j<4; $j++)
+            if ($i == $j)
+                $I[$i][$j] = 1;
+    return $I;
+}
+
+global proc set_matrix(matrix $M, string $obj){
+    xform -ws -m
+        ($M[0][0]) ($M[0][1]) ($M[0][2]) ($M[0][3])
+        ($M[1][0]) ($M[1][1]) ($M[1][2]) ($M[1][3])
+        ($M[2][0]) ($M[2][1]) ($M[2][2]) ($M[2][3])
+        ($M[3][0]) ($M[3][1]) ($M[3][2]) ($M[3][3])
+        $obj;
+}
+global proc vector[] get_vecs(string $lssl[]){
+    // using vertex/cv/ep points
+    // returns vecttros array
+    string $pts[] = `ls -fl -type float3 -type double3 $lssl`;
+    vector $pos;
+    vector $vecs[];
+    int $p;
+    for ($sel in $pts){
+        $pos = `xform -q -ws -t $sel`;
+        $vecs[$p++] = $pos;
+    }
+    return $vecs;
+}
+global proc matrix v_to_m44(vector $vecs[]){
+    matrix $M[4][4];
+    $M[3][3] = 1;
+    for ($i=0; $i<4; $i++){
+        $vec = $vecs[$i];
+        $M[$i][0] = $vec.x;
+        $M[$i][1] = $vec.y;
+        $M[$i][2] = $vec.z;
+    }
+    return $M;
+}
+global proc matrix v_to_m33(vector $vecs[]){
+    matrix $M[3][3];
+    for ($i=0; $i<3; $i++){
+        $vec = $vecs[$i];
+        $M[$i][0] = $vec.x;
+        $M[$i][1] = $vec.y;
+        $M[$i][2] = $vec.z;
+    }
+    return $M;
+}
+global proc matrix f_to_m33(float $m[]){
+    matrix $M[3][3];
+    for ($k=0; $k<12; $k++){
+        $i = $k/4;
+        $j = $k%4;
+        $x = $j/3;
+        if ($x)
+            // skip 4 position
+            continue;
+        // print {($i + ":" + $j)};
+        $M[$i][$j] = $m[$k];
+    }
+    return $M;
+}
+global proc matrix f_to_m44(float $m1[]){
+    matrix $M[4][4];
+    int $k;
+    for ($i=0; $i<4; $i++)
+        for ($j=0; $j<4; $j++)
+            $M[$i][$j] = $m1[$k++];
+    return $M;
+}
+global proc matrix inv_m33(matrix $M){
+    matrix $R[3][3];
+    for ($i=0; $i<3; $i++)
+        for ($j=0; $j<3; $j++)
+            $R[$j][$i] = $M[$i][$j];
+    return $R;
+}
+global proc matrix inv_m44(matrix $M){
+    matrix $Mi[4][4];
+    vector $Ti;
+    vector $T = <<$M[3][0], $M[3][1], $M[3][2]>>;
+    matrix $R[3][3] = inv_m33($M);
+    for ($i=0; $i<3; $i++)
+        for ($j=0; $j<3; $j++)
+            $Mi[$i][$j] = $R[$i][$j];
+    $Ti = $T * $R * -1;
+    $Mi[3][0] = $Ti.x;
+    $Mi[3][1] = $Ti.y;
+    $Mi[3][2] = $Ti.z;
+    $Mi[3][3] = 1;
+    return $Mi;
+}
+
+// utils //
+
+global proc matrix comps_to_m44(string $comps[]){
+    matrix $M[4][4];
+    // comps to vertices
+    string $vtxs[] = tovtx($comps);
+    print {"$vtxs: "};
+    print $vtxs;
+    //get vectors: from source vertices
+    vector $vecs[] = get_vecs($vtxs);
+    vector $X_a = unit($vecs[1] - $vecs[0]);
+    vector $Y_a = unit($vecs[2] - $vecs[0]);
+    vector $Z_a = unit(cross($X_a, $Y_a));
+    $Y_a = unit(cross($Z_a, $X_a));
+    vector $T_a = $vecs[0];
+    //form matrix: by given vectros
+    vector $mat_vec_a[] = {$X_a,$Y_a,$Z_a,$T_a};
+    $M = v_to_m44($mat_vec_a);
+    return $M;
+}
+
+global proc int[] readPolyInfo(string $lines[]){
+    // pinfo string data to int array conversion
+    
+    string $vtx_str[];
+    int $vtx_ids[];
+    int $s, $v;
+    for ($line in $lines){
+        $spl_data = stringToStringArray($line, ":");
+        string $spl[];
+        $tk_sz = `tokenize $spl_data[1] $spl`;
+        for ($x in $spl)
+            if (`match "[0-9]+" $x` != "")
+                $vtx_str[$s++] = $x;
+    }
+    // rid off duplicates
+    $vtx_str = stringArrayRemoveDuplicates($vtx_str);
+    for ($st in $vtx_str)
+        $vtx_ids[$v++] = $st;
+    return $vtx_ids;
+}
+
+global proc string[] tovtx(string $comps[]){
+    // component conversion: from any to vertex using polyInfo
+    string $vtxs[];
+    for ($comp in $comps)
+        $vtxs = stringArrayCatenate($vtxs, comp_to_vtxs($comp));
+    $vtxs = stringArrayRemoveDuplicates($vtxs);
+    return $vtxs;
+}
+
+global proc string[] comp_to_vtxs(string $comp){
+    string $vtxs[];
+    $vtx_form = "^1s.vtx[^2s]";
+    $node = plugNode($comp);
+    string $pinfos[];
+    if (!size(`filterExpand -sm 31 $comp`)){
+        if (size(`filterExpand -sm 32 $comp`))
+            $pinfos = `polyInfo -ev $comp`;
+        else
+            if (size(`filterExpand -sm 34 $comp`))
+                $pinfos = `polyInfo -fv $comp`;
+        $vtx_ids = readPolyInfo($pinfos);
+        int $v;
+        for ($i in $vtx_ids)
+            $vtxs[$v++] = `format -s $node -s $i $vtx_form`;
+    }
+    else
+        $vtxs = {$comp};
+    return $vtxs;
+}
+
+// main //
+global proc snap3p(){
+    // Select 3 points of src and target objects
+    // src will be matched
+
+    // 1. get selection:
+    $lssl = `ls -sl -o`;
+    print {"$lssl: "};
+    print $lssl;
+    // 1.1 source from first comps object
+    $ls_objA = listRelatives("-p", $lssl[0]);
+    $objA = $ls_objA[0];
+    print {"src: " + $objA};
+    // 1.2. convert any comps to vertices
+    $comps_a = `ls -sl -fl -type float3 -type double3 $lssl[0]`;
+    string $vtxs_a[] = tovtx($comps_a);
+    print {"$vtxs_a: "};
+    print $vtxs_a;
+    $comps_b = `ls -sl -fl -type float3 -type double3 $lssl[1]`;
+    string $vtxs_b[] = tovtx($comps_b);
+    print {"$vtxs_b: "};
+    print $vtxs_b;
+    
+    // 2.1.a get vectors from source vertices
+    vector $vecs_a[] = get_vecs($vtxs_a);
+    vector $X_a = unit($vecs_a[1] - $vecs_a[0]);
+    vector $Y_a = unit($vecs_a[2] - $vecs_a[0]);
+    vector $Z_a = unit(cross($X_a, $Y_a));
+    $Y_a = unit(cross($Z_a, $X_a));
+    vector $T_a = $vecs_a[0];
+    //2.2.a form matrix: by given vectros
+    matrix $M_a[4][4];
+    vector $mat_vec_a[] = {$X_a,$Y_a,$Z_a,$T_a};
+    $M_a = v_to_m44($mat_vec_a);
+    matrix $Mi_a[4][4] = inv_m44($M_a);
+    
+    // 2.1.b get vectors from target vertices
+    vector $vecs_b[] = get_vecs($vtxs_b);
+    vector $X_b = unit($vecs_b[1] - $vecs_b[0]);
+    vector $Y_b = unit($vecs_b[2] - $vecs_b[0]);
+    vector $Z_b = unit(cross($X_b, $Y_b));
+    $Y_b = unit(cross($Z_b, $X_b));
+    vector $T_b = $vecs_b[0];
+    // 2.2.b form matrix: by given vectros
+    matrix $M_b[4][4];
+    vector $mat_vec_b[] = {$X_b, $Y_b, $Z_b, $T_b};
+    $M_b = v_to_m44($mat_vec_b);
+    
+    //3. transformation matrix from A to B
+    matrix $T[4][4] = $Mi_a * $M_b;
+    
+    // apply transformation matrix //
+    set_matrix $T $objA;
+}
+
+// debug utils //
+global proc setPlane(){
+    // initializing global matrix for debugging
+    // matrix setter: defines matrix from selected comps
+    global matrix $gBaMat44[4][4];
+    $gBaMat44 = comps_to_m44(
+        `ls -os -fl -type "float3" -type double3`);
+}
+global proc invPlane(){
+    global matrix $gBaMat44[4][4];
+    global matrix $gBaMI44[4][4];
+    $gBaMI44 = inv_m44($gBaMat44);
+}
+global proc addPlane(){
+    global matrix $gBaMat44B[4][4];
+    $lssl = `ls -sl`;
+    $gBaMat44B = f_to_m44(`xform -q -ws -m $lssl[0]`);
+}
+global proc multPlane(){
+    global matrix $gBaMat44[4][4];
+    global matrix $gBaMI44[4][4];
+    global matrix $gBaMat44B[4][4];
+    print {"add: "};
+    if (CHK_M($gBaMat44B))
+        $gBaMat44B = get_id_mat();
+    print $gBaMat44B;
+    // select transform
+    // $gBaMI44 = inv_m44($gBaMat44B);
+    $gBaMI44 = inv_m44($gBaMat44);
+    print {"inv: "};
+    print $gBaMI44;
+    $gBaMat44 = $gBaMI44 * $gBaMat44B;
+    print {"result:"};
+    print $gBaMat44;
+}
+global proc VIS_M(){    // 
+    global matrix $gBaMat44[4][4];
+    $jnt = `joint -n "VIS_M#"`;
+    set_matrix $gBaMat44 $jnt;
+}
+
+global proc VIS_MI(){
+    global matrix $gBaMI44[4][4];
+    $jnt = `joint -n "VIS_MI#"`;
+    set_matrix $gBaMI44 $jnt;
+}
+
+global proc int CHK_M(matrix $M){
+    // check if matrix basises are zero
+    // returns true on errors
+    vector $vec, $cur_vec;
+    for ($i=0; $i<3; $i++){
+        $cur_vec = <<$M[$i][0], $M[$i][1], $M[$i][2]>>;
+        $vec += $cur_vec;
+    }
+    return (!$vec);
+}

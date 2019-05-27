@@ -1,0 +1,17 @@
+//selector -icon;
+//headsUpMessage "hello there";
+commandPort -n ":7001" -stp mel;
+//commandPort -n ":7002" -stp python;
+// HUDshowCurrentWeight();
+
+// resotre uv subdivision lines color
+{
+    print {" :: Adjusting saved UV editors subdivision grid color"};
+    float $uvsgrid[3] = `optionVar -q textureWindowSubdivisionLinesColor`;
+    textureWindow 
+        -edit
+        -subdivisionLinesColor $uvsgrid[0]
+                               $uvsgrid[1]
+                               $uvsgrid[2]
+        `getPanel -sty polyTexturePlacementPanel`;
+}

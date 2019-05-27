@@ -1,73 +1,59 @@
+//v0.1b -fix- doRefPair(); bad if statment on doadd=0
+//      -ren- findref > doRefPair
 //v0.1a
 
 global proc string[] refpair(string $mode1, string $mode2){
     // tries to find reference pairs if simple name(s) are selected
     // or home goems if reference(s) are selected
     
-    string $lssl[] = `ls -sl`;
-    string $msg = "\nReference pairs forund:";
-
-    string $items[] = findRefPairs($lssl);
-    int $swap;
-    if (!size($items)){
-        $swap = 1;
-        $items = findPairsFromRef($lssl);
-        if (!size($items)){
-            $msg = "\nNoting is found... -_-'";
-            return {};
-        }
-        $msg = "\nHome pairs forund:";
-    }
-    // if (!size($ls_rps)){
-    //     int $s;
-    //     for ($sel in $lssl){
-    //         $bn = `match "[^|]+$" $sel`;
-    //         $stripname = `match "[^:]+$" $bn`;
-    //         if (`objExists $stripname`)
-    //             $ls_rps[$s++] = $stripname;
-    //     }
-    // }
-    
-    // swap if 
-    if ($swap){
-        $tmp_ls = $lssl;
-        $lssl = $items;
-        $items = $tmp_ls;
-    }
     int $dosel;
+    int $doadd;
     for ($mode in {$mode1, $mode2}){
         switch($mode){
             case "-sel":
                 $dosel = 1;
                 break;
             case "-add":
-                $items = zipItems($items, $lssl);
+                $doadd = 1;
                 break;
             default:
                 break;
         }
     }
+    string $lssl[] = `ls -sl`;
+    string $msg = "\nPairs forund:";
+    string $items[] = doRefPair($lssl, $doadd);
+
+    if (!size($items))
+        $msg = "\nNoting is found... -_-'";
+    
     print {$msg};
-    print $items;
-    if ($dosel){
-        print {"..Selecting"};
-        select $items;
+    
+    if (size($items)){
+        print $items;
+        if ($dosel){
+            print {"..Selecting"};
+            select $items;
+        }
     }
     return $items;
 }
 
-global proc string[] doRefPair(string $lssl[]){
-    if (!size($lssl))
-        $lssl = `ls -sl`;
-    string $items[] = findRefPairs($lssl);
-    string $msg = "\nReference pairs forund:";
-    if (!size($items)){
-        $items = findPairFromRef($lssl);
-        if (!size($items)){
-            $msg = "\nNoting is found... -_-'";
+global proc string[] doRefPair(string $lssl[], int $doadd){
+    /* usage:   select local or referenced geometry(transform)
+    // args:    
+    //  - $doadd (int), 1 - get both original and found items
+    // return:  list, reference and its local twin
+    */
+    $chk_cnt = $doadd ? 2 : 1;
+    string $items[] = stringArrayRemoveDuplicates(
+        findRefPairs($lssl, $doadd));
+    if (size($items) < $chk_cnt){
+        $items = stringArrayRemoveDuplicates(
+            findPairsFromRef($lssl, $doadd));
+        if (size($items) < $chk_cnt){
             return {};
         }
-        $msg = "\nHome pairs forund:";
     }
     return $items;
 }
@@ -88,15 +74,9 @@ global proc string[] zipItems(string $zipA[], string $zipB[]){
     }
     return $items;
 }
-global proc string[] findRefPairs(string $lssl[]){
+global proc string[] findRefPairs(string $lssl[], int $add){
+    // returns only pairs, if pair not found source item is removed
     
-    // string $lsobj[] = `ls $obj`;
-    // $basename = `match "[^|]+$" $lsobj[0]`;
-
-    // $ls_by_rf = `ls -r 1 $basename`;
-    // string $ls_pair[] = stringArrayRemove({$lsobj[0]}, $ls_by_rf);
-    // string $pairs[] = `ls $obj $ls_pair`;
-    // return $pairs;
     if (!size($lssl))
         $lssl = `ls -sl`;
     string $items[];
@@ -104,22 +84,35 @@ global proc string[] findRefPairs(string $lssl[]){
     for ($sel in $lssl){
         $bn = `match "[^|]+$" $sel`;
         $ls_ref = `ls ("*:" + $bn)`;
-        if (size($ls_ref))
+        if (size($ls_ref)){
             $items[$i++] = $ls_ref[0];
+            if ($add)
+                $items[$i++] = $sel;
+            // $items[$i++] = $bn;
+        }
     }
     return $items;
 }
 
-global proc string[] findPairsFromRef(string $lssl[]){
+global proc string[] findPairsFromRef(string $lssl[], int $add){
+    // args:
+    //  $add - returns paired list (0, 1), (2, 3)
+    // returns only pairs, if pair not found source item is removed
     if (!size($lssl))
         $lssl = `ls -sl`;
     string $items[];
+    // string $pairsA[];
+    // string $pairsB[];
     int $i;
     for ($sel in $lssl){
         $strip_ns = `match "[^:]+$" $sel`;
         $bn = `match "[^|]+$" $strip_ns`;
-        if (`objExists $bn`)
+        if (`objExists $bn`){
+            // $pairsA[$i] = $sel;
+            if ($add)
+                $items[$i++] = $sel;
             $items[$i++] = $bn;
+        }
     }
     return $items;
 }

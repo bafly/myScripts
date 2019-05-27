@@ -1,0 +1,658 @@
+//v0.1d fix repsel(); wrong src and trg
+//v0.1c new repsel();
+//v0.1b fix lr -fullPath
+//v0.1a
+
+// get doSkinIt({skinned, unskined, unsk... etc}, "oneToOne")
+// get getbinds(list) >>  0 - jnts
+//                        1 - binded
+//                        2 - skinCluster
+//                        3 - non binded geometries
+source getjnts;
+source refpair;     // usign in updsel
+source avfx_mod;
+
+// take doCompare def using args to comparing
+python("from inhouse.maya_rigger_tools import avfx_polycomp as pc");
+
+// take doInMesh(src, trg, disconnect(int: 0-no, 1-yes))
+// take getInitShape proc to get right shape
+source inmesh;
+
+// take mrkColor to set 0 - yellow, 1 - red color
+// take doMark( $node, 
+//              0/1(unmark/mark),
+//              int(to set color in mrkColor templates) )
+source mrk;
+
+global proc string getRefPair(string $sel){
+
+    $bname = `match "[^|]+$" $sel`;
+    $mod = `modwat $sel`;
+    $ref = `modgetref $mod`;
+    $refnodes = `referenceQuery -n $ref`;
+    $find = format(
+        "-s", `referenceQuery -shn -ns $ref`, 
+        "-s", $bname, 
+        "^1s:^2s"
+    );
+    
+    int $i = stringArrayFind(
+        $find,
+        0,
+        $refnodes
+    );
+    if ($i < 0)
+        return "";
+        
+    $refgeo = $refnodes[$i];
+    return $refgeo;
+}
+
+global proc string[] updgeo(){
+
+    // returns updated geoms
+    
+    string $refgeoms[];
+    string $oldgeoms[];
+    string $CHKs[];
+    string $updated[];
+
+    // checkgeo returns only outdated items
+    string $lssl[] = `ls -sl`;
+    string $upd_data[2] = checkgeo($lssl);
+    $refgeoms = stringToStringArray($upd_data[0], " ");
+    $oldgeoms = stringToStringArray($upd_data[1], " ");
+    $CHKs = stringToStringArray($upd_data[2], " ");
+    int $gsz = size($refgeoms);
+
+    for ($i=0; $i<$gsz; $i++){
+        $src = $refgeoms[$i];
+        $trg = $oldgeoms[$i];
+        print {"src: " + $src};
+        string $ls_trg_p[1] = `listRelatives -f -p $trg`;
+        string $ls_src_p[1] = `listRelatives -f -p $src`;
+        string $trg_tr = $ls_trg_p[0];
+        string $src_tr = $ls_src_p[0];
+        string $CHK[] = stringToStringArray($CHKs[$i], "|");
+
+        $ls_defr = findRelatedDeformer($src_tr);
+        if (!size(`ls -type skinCluster $ls_defr`)
+            // if ($CHK < 2 || !size($ls_defr))
+            || (!stringArrayContains("edge", $CHK)
+                    && !stringArrayContains("face", $CHK)))
+                doInMesh($src, $trg, 1);
+        else{
+            // if geometry can't be inmeshed, duplicating
+            //  reference item
+
+            // print {"upd: " + $trg};
+            // duplicate referenced pair
+            string $trg_par_grp[1] = `listRelatives -p -f $ls_trg_p[0]`;
+            string $pairs[2] = createUpdatedGeom($trg_tr, $src_tr);
+            $src_tr = $pairs[0];    // renamed old geom
+            $trg_tr = $pairs[1];    // duplicated ref geom
+            parent $trg_tr $trg_par_grp[0];
+            print("duplicated: " + $src_tr + "\n");
+            
+            // copy skinCluster
+            string $bind_data[] = getbinds({$src_tr});
+            if ($bind_data[1] != "")
+                doSkinIt({$src_tr, $trg_tr}, "oneToOne");
+            // copy other defoemers
+            // ffd
+            $ls_ffd = `ls -type ffd $ls_defr`;
+            if (size($ls_ffd)){
+                $ls_defr_set = `listConnections 
+                    -s 0 -d 1 -type objectSet ($ls_defr[0]+".msg")`;
+                if (size($ls_defr_set))
+                    sets -fe $ls_defr_set[0] $trg_tr;
+            }
+        }
+        $updated[$i] = $trg_tr;
+        doMark($trg_tr, 1, 4);
+
+    }
+
+    return $oldgeoms;
+}
+
+global proc string[] get_all_geo(){
+    
+    string $legimate_geogrp_names[3] = {
+        "geo",
+        "geo_proxy",
+        "geo_dummy"
+    };
+    string $ls_geogrps[] = stringArrayRemoveDuplicates(
+        listRelatives(
+            "-p",
+            "-f",
+            `ls -ni -dag -s -type mesh $legimate_geogrp_names`
+        )
+    );
+    
+    return $ls_geogrps;
+    
+}
+
+global proc string[] sort_only_matched(string $ls[]){
+    
+    string $sorted[];
+    string $pairs[];
+    int $i;
+    for($node in $ls){
+        
+        string $pair = getRefPair($node);
+        if ($pair == "")
+            continue;
+        $sorted[$i] = $node;
+        $pairs[$i++] = $pair;
+    }
+    
+    string $matched_data[] = {
+        stringArrayToString($sorted, " "),
+        stringArrayToString($pairs, " ")
+    };
+    
+    return $matched_data;
+}
+// 
+global proc string[] checkgeo(string $geoms[]){
+    
+    // geoms, list - geomtries(transforms with shape type "mesh")
+    // returns(data_list[2](string)) [0] referenced soruces
+    //                               [1] outdated home gometries
+    //                               [2] bit information(1 - topo is same,
+    //                                                   other - all new)
+    // requires:
+    //      getInitShape(string) >> inmesh.mel
+    //      doMark(string, int, int) >> mrk.mel
+    //      removeMarks(string[]) >> mrk.mel
+    //      sort_only_matched(string[])
+    //      CHECKSTATUS(string, string)
+    int $o;
+    string $refed[], $outd[], $CHKs[];
+    if (!size($geoms))
+        $geoms = get_all_geo();
+    else{
+        // find all shapes deep in hierarchy of selected items
+        $hi_shps = `ls -dag -s -ni -type mesh $geoms`;
+        $geoms = stringArrayRemoveDuplicates(
+            `listRelatives -f -p $hi_shps`
+            );
+    }
+    $g_sz = size($geoms);
+    
+    // reset all marks
+    removeMarks $geoms; 
+    for($i=0; $i<$g_sz; $i++){
+        
+        // home geometry
+        $trg = getInitShape($geoms[$i]);
+        $find_src_trf = getRefPair($geoms[$i]);
+        if ($find_src_trf == ""){
+            // ref pair not found: turns black
+            doMark $geoms[$i] 1 0;
+            continue;
+        }
+        // referenced
+        $src = getInitShape($find_src_trf);
+        
+        string $ls_trg_p[1] = `listRelatives -f -p $trg`;
+        // print {$src, $trg};
+        string $CHK[] = CHECKSTATUS($src, $trg);
+        if (!size($CHK)){
+            // geometry is valid
+            doMark($trg, 0, 0);
+            continue;
+        }
+
+        // geometry outdated
+        $refed[$o] = $src;
+        $outd[$o] = $trg;
+        doMark($ls_trg_p[0], 1, 2);
+        $CHKs[$o++] = stringArrayToString($CHK, "|");
+    }
+    string $upd_data[2] = {
+        stringArrayToString($refed, " "),
+        stringArrayToString($outd, " "),
+        stringArrayToString($CHKs, " ")
+    };
+    return $upd_data;
+}
+
+global proc string[] CHECKSTATUS(string $src, string $trg){
+    
+    string $CHK[] = python(
+        `format -s $src 
+                -s $trg 
+                "pc.doIt_list(\"^1s\", \"^2s\")"`
+    );
+    return $CHK;
+}
+
+global proc int checkUV(string $a, string $b){
+
+    vector $posA;
+    vector $posB;
+
+    $uvsA = `ls -fl ($a + ".uv[*]")`;
+    for ($uv in $uvsA)
+        $posA += `getAttr $uv`;
+    $uvsB = `ls -fl ($b + ".uv[*]")`;
+    for ($uv in $uvsB)
+        $posB += `getAttr $uv`;
+
+    return $posA != $posB ? 24 : 0;
+}
+
+global proc string[] createUpdatedGeom(
+    string $oldGeom, 
+    string $refGeom
+){
+
+    // oldGeom(tr)
+    // refGeom(tr)
+    // returns( list[2]: old(renamed), new(duplicated ref) )
+
+    if ($refGeom == "")
+        $refGeom = getRefPair($oldGeom);
+        if ($refGeom == "")
+            return {};
+    // rename oldGeom
+    string $oldg_name = `match "[^|]+$" $oldGeom`;
+    string $old = `rename $oldGeom ("old_" + $oldg_name)`;
+
+    string $ls_dup[1] = `duplicate $refGeom`;
+    string $new = $ls_dup[0];
+
+    return {$old, $new};
+}
+
+global proc updgeo_(){
+    
+    string $lssl[] = `ls -sl`;
+    for ($sel in $lssl){
+        $mod = whatmod($sel);
+        $ref = modgetref($mod);
+        $pfx = `referenceQuery -ns -shn $ref` + ":";
+        $pair = $pfx + $sel;
+        if (`objExists $pair`){
+            python(`format 
+                -s $pair 
+                -s $sel 
+                "pc.doCompare(\"^1s\",\"^2s\")"`);
+            //doInMesh $pair $sel 1;
+        }
+    }
+}
+
+global proc string findModRef(string $mod){
+    
+    $modrefs = `modrefs`;
+    for ($rf in $modrefs){
+        $filename = `referenceQuery -f $rf`;
+        if (endsWith(basename($filename, ".abc"), $mod))
+            return $rf;
+    }
+    return "";
+}
+global proc string whatmod(string $node){
+    
+    string $mod;
+    
+    $ls_node = `ls $node`;
+    $ls_node_sz = size($ls_node);
+    if ($ls_node_sz > 1){
+        print `format 
+            -s $node 
+            -s ls_node_sz  
+            "  <!> Name <^1s> clashes: <^2s> times\n"`;
+        return $mod;
+    }
+    else if (!$ls_node_sz)
+        return $mod;
+    
+    string $splitname[];
+    int $tkz = `tokenize $node "|" $splitname`;
+    $bname = $splitname[$tkz-1];
+
+    $mod = "modA";
+    if ($tkz > 2){
+        $geogrp = $splitname[$tkz-2];
+        $modgrp = $splitname[$tkz-3];
+        print("geo group: " + $geogrp + "\n");
+        print("mod group: " + $modgrp + "\n");
+        $mod = "modX";
+    }
+
+    return $mod;
+}
+//whatmod mnl_eyeshell_l
+global proc string[] findRefPair_(string $nodes[]){
+    
+    string $nss[];
+    int $n;
+
+    for ($rf in `modrefs`){
+        
+        $ns = `referenceQuery -shn -ns $rf`;
+        $nss[$n++] = $ns+":";
+        
+        
+    }
+    return $nss;
+}
+
+global proc string[] modrefs(){
+    
+    // all refs
+    $refs = `ls -rf`;
+    
+    //  abc refs
+    string $abc_refs[1];
+    int $a;
+    for ($rf in $refs)
+        if (endsWith(`referenceQuery -f $rf`, ".abc"))
+            $abc_refs[$a++] = $rf;
+    return $abc_refs;
+}
+
+global proc string[] findNew(string $sel){
+
+    if ($sel == ""){
+        string $lssl[] = `ls -sl`;
+        $sel = $lssl[0];
+    }
+    
+    string $refs[] = listRelatives(
+        "-p", 
+        "-f", 
+        `ls -dag -s -type mesh -ni $sel`
+        );
+    
+    string $new[];
+    int $n;
+    for ($ref in $refs){
+        $bname = `match "[^:]+$" $ref`;
+        $ls_node = `ls $bname`;
+        if (!size($ls_node))
+            $new[$n++] = $ref;
+    }
+    return $new;
+}
+
+global proc string[] findOld(string $sel){
+
+    string $items[];
+    if ($sel == ""){
+        string $lssl[] = `ls -sl`;
+        $sel = $lssl[0];
+    }
+
+    int $i;
+    string $inputs[] = listRelatives(
+        "-p", 
+        "-f", 
+        `ls -dag -s -type mesh -ni $sel`
+        );
+    for ($sel in $inputs){
+        if (!size(getRefPair($sel)))
+            $items[$i++] = $sel;
+    }
+    return $items;
+}
+
+global proc string[] ug_select(string $proc, string $args[]){
+
+    string $res, $eval_cmd;
+    string $items[];
+    
+    for ($arg in $args)
+        $proc += " " + $arg;
+    
+    $proc += " ";
+    $i = 0;
+    for ($sel in `ls -sl`){
+        // $eval_cmd = $proc + $sel;
+        $eval_cmd = `format -s $sel $proc`;
+        print {$eval_cmd};
+        $res = eval($eval_cmd);
+        print {$res};
+        if ($res != "")
+            $items[$i++] = $res;
+    }
+    // select $res;
+    return $items;
+}
+
+global proc string[] ug_eval(string $proc, string $args[]){
+
+    string $res, $eval_cmd;
+    string $items[];
+    
+    for ($arg in $args)
+        $proc += " " + $arg;
+    
+    $proc += " ";
+    $i = 0;
+    for ($sel in `ls -sl`){
+        // $eval_cmd = $proc + $sel;
+        $eval_cmd = `format -s $sel $proc`;
+        print {$eval_cmd};
+        $res = eval($eval_cmd);
+        print {$res};
+        if ($res != "")
+            $items[$i++] = $res;
+    }
+    // select $res;
+    return $items;
+}
+
+global proc int updsel(){
+    /*  usage: select items in paired order, e.g:
+            REF:Roots1 Roots1 REF:Stone89 Stone89 ..etc
+        return: int, 0 - all good, 1 or > 1 if nothing to update or
+            number of failed attempts
+    */
+    source inmesh;
+    source snap;
+
+    int $res;
+    string $lssl[] = `ls -sl`;
+    int $sz = size($lssl);
+    if ($sz < 2){
+        $lssl = `doRefPair $lssl 1`;  // paired items order
+        $sz = size($lssl);
+        if ($sz < 2)
+            return 1;
+    }
+    for ($i=0; $i<$sz; $i++){
+        $src = $lssl[$i++];
+        $trg = $lssl[$i];
+        $res = catchQuiet(updpair($src, $trg));
+        if ($res)
+            $res++;
+    }
+    return $res;
+}
+
+global proc string updpair(string $src, string $trg){
+    $ns = `substitute "[^:]+$" $src ""`;
+    $src_n = `stripPrefixFromName $ns $src`;
+    if (size(`listRelatives -f -s $trg`)){
+        doInMesh($src, $trg, 1);
+        evalDeferred(`format -s $trg -s $src_n"rename ^1s ^2s"`);
+        select $src;
+    }
+    else{
+        parent $src $trg;
+        $ls_par_par = `listRelatives -f -c $trg`;
+        if (size($ls_par_par)){
+            doSnap $src $ls_par_par[0] 1 0;
+        }
+        evalDeferred(`format -s $src -s $src_n"rename ^1s ^2s"`);
+    }
+    return $trg;
+}
+
+global proc sortrigid(){
+    select(doSortRigid({}));
+}
+
+global proc string[] doSortRigid(string $lssl[]){
+    if (!size($lssl))
+        $lssl = `ls -sl`;
+    string $items[];
+    int $i;
+    for ($sel in $lssl){
+        $ls_def = `findRelatedDeformer $sel`;
+        if (!size($ls_def))
+            $items[$i++] = $sel;
+    }
+    return $items;
+}
+
+global proc repsel(){
+    $lssl = `ls -l -sl`;
+    string $pairs[];
+    if (size($lssl) == 1)
+        $pairs = `refpair -sel -add`;
+    if (size($lssl) < 2)
+        return;
+    $pairs = $lssl;
+    doRepSel $pairs[0] $pairs[1] 0;
+}
+
+global proc repselren(){
+    $lssl = `ls -l -sl`;
+    string $pairs[];
+    if (size($lssl) == 1)
+        $pairs = `refpair -sel -add`;
+    if (size($lssl) < 2)
+        return;
+    $pairs = $lssl;
+    doRepSel $pairs[0] $pairs[1] 1;
+}
+
+global proc string doRepSel(string $src, string $trg, int $dorename){
+    
+    int $del_src = 1;
+    string $res = $src;
+    // duplicate if under ns
+    $pfx = "tmp_";
+    $bn = `match "[^|]+$" $trg`;
+    $par = `substitute "[^|]+$" $trg ""`;
+    if (`gmatch $src "*:*"`){
+        $ls_dup = `duplicate -rr -n ($pfx + $bn) $src`;
+        parent $ls_dup[0] $par;
+        $res = $par + $ls_dup[0];
+    }
+    // cp constraint
+    // TODO
+
+    // reorder in outliner
+    $lr = `listRelatives -f -c $par`;
+    $pos = stringArrayFind($trg, 0, $lr);
+    $par_res = `parent $res $par`;
+    $src = $par_res[0];
+    reorder -r (1 + $pos) $src;
+
+    // remove old
+    if ($del_src)
+        delete $trg;
+        // rename new as old
+    if ($dorename)
+        $res = `rename $trg $bn`;
+
+    return $res;
+}
+
+
+
+global proc rep_test(string $src, string $trg){
+    doInMesh $src $trg 1;
+    $bn = `match "[^:]+$" $src`;
+    rename $trg $bn;
+}
+
+global proc updByPfx(string $lssl[]){
+    
+    $pfx = "pasted__";
+    // select new (IMP)objects pasted__
+    $lssl = `ls $lssl ($pfx+"*")`;
+    if (!size($lssl))
+        $lssl = `ls -l -sl ($pfx+"*")`;
+    for ($sel in $lssl){
+        $pair = `substitute $pfx $sel ""`;
+        if (`objExists $pair`)
+            updpair $pair $sel;
+
+    }
+}
+
+global proc string[] getPfxPair(string $pfx){
+    if ($pfx == "")
+        $pfx = setUGpfx();
+    if ($pfx == "")
+        return {};
+    print {"pfx: "+ $pfx};
+    string $pair;
+    string $lssl[] = `ls -sl`;
+    string $pairs[];
+    int $err = 0;
+    int $p;
+    for ($sel in $lssl){
+        $pair = $pfx + $sel;
+        $ls_pair = `ls $pair`;
+        if (size($ls_pair)){
+            $pair = $ls_pair[0];
+            print {"pA: " + $pair};   
+        }
+        else{
+            $pair = `substitute $pfx $sel ""`;
+            print {"pB: " + $pair};
+            if ($pair == $sel){
+                $pair = "";
+                $err = 1;
+                continue;
+            }
+        }
+        $pairs[$p++] = $pair;
+    }
+    print {"res: " + $err};
+    // if ($p>1)
+    //     if (size($lssl) == $p)
+    //         $pair += "...";
+    return $pairs;
+}
+
+global proc string setUGpfx(){
+    string $pfx;
+    // guess
+    string $lssl[] = `ls -sl`;
+    string $tx = "pasted__";
+    $bn = `match "[^|]+$" $lssl[0]`;
+    $ns = `match "^.*[:]" $bn`;
+    if ($ns != ""){
+        print `format -s $ns "NS found: ^1s"`;
+        $tx = $ns;
+    }
+    $okbt = "OK";
+    $xbt = "Cancel";
+    $usr_inp = `promptDialog 
+        -m "Set Prefix of reference object" 
+        -t "Update geometry"
+        -tx $tx
+        -b $okbt
+        -b $xbt
+        -db $okbt
+        -cb $xbt
+        -ds $xbt
+        `;
+    print {"inp: " + $usr_inp};
+    if ($usr_inp == $okbt)
+        $pfx = `promptDialog -q -tx`;
+    return $pfx;
+}

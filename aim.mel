@@ -1,0 +1,13 @@
+global proc aim(){
+
+    python("import aimit");
+    python("aimit.aim()");
+
+}
+
+global proc doAim(float $inv){
+
+    python("import aimit");
+    python(`format -s $inv "aimit.aim(inv=^1s)"`);
+
+}

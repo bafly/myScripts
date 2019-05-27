@@ -1,0 +1,15 @@
+global proc selshp(){
+	//
+	select `doSelShapes {}`;
+}
+global proc string[] doSelShapes(string $lssl[]){
+	if (!size($lssl))
+		$lssl = `ls -sl`;
+	string $items[];
+	// int $i;
+	for ($sel in $lssl){
+		$items = stringArrayCatenate(
+			$items, `listRelatives -f -s -ni $sel`);
+	}
+	return $items;
+}

@@ -1,0 +1,74 @@
+// $ikh = "ikh_IJ"
+global proc string[] mkstrik(){
+    /*Select existing ikHanlde or joints*/
+    string $iks[] = `ls -type ikHandle -sl`;
+    string $lsjnts[] = `ls -sl -type joint`;
+    if (size($lsjnts)){
+        string $ik_data[] = `ikHandle 
+            -sol ikSCsolver 
+            $lsjnts`;
+        string $st = `ikHandle -q -sj $ik_data[0]`;
+
+        // get start joint and renameit
+        $ikhn = `match "_" $st` != "" ? 
+                `substitute "^.*[^_]+" $st "ikh"` : 
+                ("ikh_"+$st);
+        $ik_data[0] = `rename $ik_data[0] $ikhn`;
+        $iks = stringArrayCatenate($iks, {$ik_data[0]});
+    }
+    string $items[];
+    for ($ikh in $iks){
+        setAttr ($ikh+".hsh") 0;
+        $items = stringArrayCatenate($items, doMakeStretchIKH($ikh));
+    }
+    select $iks;
+    return $items;
+}
+global proc string[] doMakeStretchIKH(string $ikh){
+    
+    $jnt_aim_at = "tx";
+    $pfx_db = "db_";
+    $pfx_loc = "loc";
+    
+    string $st = `ikHandle -q -sj $ikh`;
+    $ee = `ikHandle -q -ee $ikh`;
+    string $ls_tip[] = `listConnections -s 1 -d 0 ($ee + ".tx")`;
+    if (!size($ls_tip))
+        return {};
+    $tip = $ls_tip[0];
+    // locs
+    $locs = doLocators($ikh);
+    $iks = {$st, $ikh};
+    $attrs = `listAttr -s ($st+".t")`;
+
+    for ($i=0; $i<size($iks); $i++){
+        $loc = $locs[$i];
+        $ik = $iks[$i];
+        $lspar = `listRelatives -p $ik`;
+        if (size($lspar))
+            parent -r $loc $lspar[0];
+        for ($at in $attrs)
+            connectAttr ($iks[$i]+"."+$at) ($locs[$i]+"."+$at);
+        
+    }
+    // distance node
+    string $db = `createNode -n ($pfx_db + $ikh) distanceBetween`;
+    connectAttr ($locs[1]+".wp[0]") ".p1";
+    connectAttr ($locs[0]+".wp[0]") ".p2";
+    connectAttr ".d" ($ls_tip[0] + "." + $jnt_aim_at);
+    
+    return stringArrayCatenate({$db}, $locs);
+}
+
+global proc string[] doLocators(string $name){
+    
+    string $locnA, $locnB;
+    if ($name != ""){
+        $locnA = "locA_"+$name;
+        $locnB = "locB_"+$name;
+    }
+    
+    string $locA[] = `spaceLocator -n $locnA`;
+    string $locB[] = `spaceLocator -n $locnB`;
+    return {$locA[0], $locB[0]};
+}

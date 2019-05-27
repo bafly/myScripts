@@ -1,0 +1,67 @@
+python("import tool_curveWarp as CW");
+global proc string[] cwget(){
+    string $items[];
+    string $cw;
+    int $w;
+    string $eval_cmd = "str(CW.find_cwarp(\"^1s\"))";
+    for ($sel in `ls -sl`){
+        $cw = "";
+        string $cmd = `format -s $sel $eval_cmd`;
+        print {$cmd};
+        $cw = python($cmd);
+        print {$cw};
+        if ($cw != "")
+            $items[$w++] = $cw;
+    }
+    if ($w)
+        select $items;
+    return $items;
+}
+
+global proc string[] cwgetcrv(){
+    string $items[];
+    string $cw;
+    string $eval_cmd = "CW.get_crv(CW.find_cwarp(\"^1s\"))";
+    int $w;
+    for ($sel in `ls -sl`){
+        $cw = python(`format -s $sel $eval_cmd`);
+        print {$cw};
+        $items[$w++] = $cw;
+    }
+    select $items;
+    return $items;
+}
+
+global proc string cwrep(){
+    //;
+    $lssl =`ls -sl`;
+    if (size($lssl) != 2)
+        return "";
+    string $eval_cmd = "CW.get_crv(CW.add(\"^1s\", \"^2s\", 1))";
+    $cw = python(`format -s $lssl[0] -s $lssl[1] $eval_cmd`);
+    return $cw;
+}
+
+global proc string cwadd(){
+    // returns curve;
+    $lssl =`ls -sl`;
+    if (size($lssl) != 2)
+        return "";
+    string $eval_cmd = "CW.get_crv(CW.add(\"^1s\", \"^2s\", 0))";
+    $cwcrv = python(`format -s $lssl[0] -s $lssl[1] $eval_cmd`);
+    return $cwcrv;
+}
+
+global proc string[] cwrecr(){
+    //returns curveWarp
+    $lssl =`ls -sl`;
+    if (!size($lssl))
+        return {};
+    string $items[];
+    int $i;
+    for ($sel in $lssl){
+        string $eval_cmd = "CW.recreate(\"^1s\")";
+        $items[$i++] = python(`format -s $sel $eval_cmd`);
+    }
+    return $items;
+}

@@ -1,0 +1,105 @@
+//v0.1c -new-   updae() - update attribute editor
+//v0.1b fix getOldOrigs() - nurbscurves were not processed corectly
+//                        - delete all ios if no deformers are found
+// xorigs
+
+global proc string[] xorig(){
+    
+    $lssl = `ls -sl`;
+    string $origs[], $ls_bad_io[];
+    int $o;
+    
+    for ($sel in $lssl){
+        
+        $ios = `ls -dag -io $sel`;
+        $bad_io = getOldOrigs($sel);
+        
+        if (size($bad_io)){
+            $ls_bad_io = stringArrayCatenate($bad_io, $ls_bad_io);
+            delete $bad_io;
+        }
+        else
+            continue;
+
+        $ios = `ls -dag -io $sel`;
+        $i = 0;
+        for ($io in $ios){
+            string $catch = match("Oirg[0-9]{0,2}$", string($io));
+            if ($catch == "")
+                continue;
+            $sfx = "Orig";
+            if ($i)
+                $sfx += string($i);
+            $orig = rename($io, `substitute $catch $io ($sfx)`);
+            $origs[$o++] = $orig;
+            $i++;
+        }
+    }
+    updae;
+    return $ls_bad_io;
+}
+
+global proc updae(){
+    // update attribute editor
+    if (!`about -b`)
+        refreshAE;
+}
+
+global proc string[] getOldOrigs(string $obj){
+    
+    // using transform with shapes: mesh, nurbsCurve, nurbsSurface
+    int $b;
+    int $good;
+    string $bad_io[];
+    
+    $io = `ls -dag -io $obj`;
+    if (!size(`findRelatedDeformer $obj`))
+        $bad_io = $io;
+    $plugs = {
+        "^1s.w",
+        // "^1s.i",
+        // "^1s.cr"
+        "^1s.o",
+        "^1s.ws"
+    };
+    // $orig = $io[0]
+    for ($orig in $io){
+        $good = 0;
+        for ($plg in $plugs){        
+            $nplg = `format -s $orig $plg`;
+            if (`objExists $nplg`)
+                if (size(`listConnections $nplg`)){
+                    $good = 1;
+                    break;
+                }
+        }
+        if (!$good)
+            $bad_io[$b++] = $orig;
+    }
+    return $bad_io;
+
+}
+
+
+global proc string[] fixOrigs(string $obj){
+    
+    string $io;
+    string $organized[];
+    int $o;
+
+    $ios = `ls -dag -io $obj`;
+    $i = 0;
+    for ($io in $ios){
+
+        string $catch = match("Orig[0-9]{0,2}$", string($io));
+        if ($catch == "")
+            continue;
+        $sfx = "Orig";
+        if ($i)
+            $sfx += string($i);
+        $orig = rename($io, `substitute $catch $io $sfx`);
+        $organized[$o++] = $orig;
+        $i++;
+    }
+    return $organized;
+}

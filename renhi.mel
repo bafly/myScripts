@@ -1,6 +1,20 @@
+//v0.1a -upd- renhi(): dorenhi
+//      -new- dorenhi()
+
 // renames jnts hierarchy
 //      jnts parent grp, parent grps constriants or 
 //      constraints under joint itself
+
+global proc renikh(){
+    $lssl = `ls -sl -type ikHandle`;
+    for ($sel in $lssl){
+        //$sel = $lssl[0]
+        string $ls_jn[] = `listConnections ($sel + ".hsj")`;
+        $bn = `match "[^|]+$" $ls_jn[0]`;
+        $ikhn = "ikh_" + $bn;
+        rename $sel $ikhn;
+    }
+}
 
 proc string[] getconstr(string $dagnode){
     
@@ -41,25 +55,40 @@ global proc renhi_(){
 
 global proc renhi(){
 
-    string $sel;
+    // string $sel;
     $lssl = `ls -sl`;
-    string $split[];
 
     for ($sel in $lssl){
-        $bname = `match "[^|]+$" $sel`;
-        $lspar = `listRelatives -p -f $sel`;
-        if (!size($lspar))
-            continue;
-        tokenize($bname, "_", $split);
-        $pfx = $split[0] + "grp";
-        $split[0] = $pfx;
+        $res = dorenhi($sel);
+        // $bname = `match "[^|]+$" $sel`;
+        // $lspar = `listRelatives -p -f $sel`;
+        // if (!size($lspar))
+        //     continue;
+        // tokenize($bname, "_", $split);
+        // $pfx = $split[0] + "grp";
+        // $split[0] = $pfx;
         
-        $nn = stringArrayToString($split, "_");
-        rename $lspar $nn;
-
+        // $nn = stringArrayToString($split, "_");
+        // rename $lspar $nn;
     }
 }
 
+global proc string dorenhi(string $sel){
+    
+    string $split[];
+    
+    $bname = `match "[^|]+$" $sel`;
+    $lspar = `listRelatives -p -f $sel`;
+    if (!size($lspar))
+        return "";
+    tokenize($bname, "_", $split);
+    $pfx = $split[0] + "grp";
+    $split[0] = $pfx;
+    
+    $nn = stringArrayToString($split, "_");
+    string $res = `rename $lspar $nn`;
+    return $res;
+}
 
 // fix contraint names
 global proc string[] renconstrs(){

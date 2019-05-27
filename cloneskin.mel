@@ -1,0 +1,21 @@
+
+global proc cloneskin(){
+    
+    python("import cloneskin");
+    python("cloneskin.doIt()");
+    
+}
+
+global proc doCloneSkin(string $skins[]){
+    
+    python("import cloneskin");
+
+    if (size($skins) != 2)
+        return;
+
+    $skA = $skins[0];
+    $skB = $skins[1];
+    print(`format -s $skA -s $skB "copying A:[^1s] /B:[^2s]\n"`);
+    python(`format -s $skA -s $skB "cloneskin.doIt( \"^1s\",\"^2s\" )"`);
+    
+}

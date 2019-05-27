@@ -1,0 +1,85 @@
+//TODO UI: get all available undo queue
+//  and put in editable textField
+
+//v0.0a -new- holdundoto(int) - save last action to exact order
+//v0.0
+/*
+RuntimeCommands:
+    
+    MyUndoBuffLoader
+    Load Last Undo Actions
+    HK: ctrl+`
+    >> source undobuff;
+       loadUndoActions;
+    
+    MyUndoBuffGet1
+    Evaluate Last Undo 1st
+    HK: F1
+    >> source undobuff;
+       undobuff 0;
+    
+    MyUndoBuffGet2
+    Evaluate Last Undo 2nd
+    HK: F2
+    >> source undobuff;
+       undobuff 1;
+    
+    MyUndoBuffGet3
+    Evaluate Last Undo 3rd
+    HK: F3
+    >> source undobuff;
+       undobuff 2;
+*/
+
+global proc undobuff(int $pos){
+    global string $gBaUndoCmds[];
+    // check
+    $buff_sz = size($gBaUndoCmds);
+    if ($buff_sz > $pos)
+        $cmd = $gBaUndoCmds[$pos];
+    if ($cmd == ""){
+        print " Buffer at given position is empty\n";
+        $_user = `promptDialog -m "enter script here"`;
+        if ($_user != "dismiss"){
+            $cmd = `promptDialog -q -tx`;
+            if ($cmd != "")
+                $gBaUndoCmds[$pos] = $cmd;
+        }
+    }
+    if ($cmd != "")
+        evalEcho($cmd);
+}
+
+global proc string[] getLastActions(int $count){
+    string $filt[];
+    $count = !$count ? 1 : $count;
+    string $cmds[] = `repeatLast -q -cl`;
+    for ($i=0; $i<$count; $i++)
+        $filt[$i] = $cmds[$i];
+    
+    return $filt;
+}
+
+global proc loadUndoActions(){
+    global string $gBaUndoCmds[];
+    $user_inp = `promptDialog
+        -tx 2
+        -m "Store last n actions"
+        -b "Store" -b "Cancel"
+        -db "Cancel" -ds "Cancel"
+        `;
+    if ($user_inp == "Cancel")
+        return;
+    int $count = (int)`promptDialog -q -tx`;
+    $gBaUndoCmds = getLastActions($count);
+    print {"// Undo Loaded >>"};
+    print $gBaUndoCmds;
+    print {"<< //"};
+}
+
+global proc holdundoto(int $i){
+    global string $gBaUndoCmds[];
+    string $uactions[] = `repeatLast -q -cl`;
+    $gBaUndoCmds[$i] = $uactions[0];
+    headsUpMessage (`format -s $uactions[0] "// ^1s //\nSaved > F1"`);
+}

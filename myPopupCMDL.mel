@@ -1,0 +1,129 @@
+//v0.0a -fix- pyside, history remaining after close
+//v0.0
+// displays command line instance under the mouse pointer
+// usage: myPopupCMDL "";
+// Args:
+//  - $cmdTyp - string, if empty ("") by default will use mel
+//          acceptable inputs "mel", "py", "python"
+
+global proc newCMDLine(string $cmdType, int $p_y, int $p_x){
+    string $wnd = "myPopupCMDLwindow";
+    string $cmdl = "myPopupCMDL";
+    if (`window -ex $wnd`){
+        windowPref -e -tlc $p_x $p_y $wnd;
+        if (`window -q -vis $wnd`)
+            window -e -tlc $p_x $p_y $wnd;
+        else
+            toggleWindowVisibility $wnd;
+        setFocus $cmdl;
+        // toggleWindowVisibility $wnd;
+    }
+    else{
+        windowPref -tlc $p_x $p_y $wnd;
+        global string $gCommandLineSourceButton;
+        string $srcbtn = "myPopupCMDLsrcbtn";
+        string $cmdLineAnnot = $cmdType == "mel" ? uiRes("m_initCommandLine.kCmdLineAnnotMEL") : 
+                                            uiRes("m_initCommandLine.kCmdLineAnnotPython");
+        string $cmdFeedbackAnnot = (uiRes("m_initCommandLine.kCmdFeedbackAnnot"));
+        $iconSize = 22;
+        $lbl = `labelFromCommandSourceType $cmdType`;
+        // swtich cmd line
+        window 
+            -tlb 1 -rtf 1
+            // -cc ("toggleWindowVisibility " + $wnd)
+            -ret
+            $wnd;
+        formLayout -w 500 myPopupCMDLLay;
+        commandLine -holdFocus 1 -sourceType $cmdType 
+                    -inputAnnotation $cmdLineAnnot
+                    -outputAnnotation $cmdFeedbackAnnot
+                    $cmdl;
+        $tgl_cmd = `format -s $cmdl -s $srcbtn "myPopupCMDLtgl ^1s ^2s"`;
+        iconTextButton -style "textOnly" -label $lbl 
+                       -annotation (uiRes("m_initCommandLine.kMELSourceToggleButtonAnn"))
+                       -height $iconSize -width 46
+                       -command $tgl_cmd
+                       $srcbtn;
+        // upd optionVar
+        // optionVar -sv commandLineSourceType $cmdType;
+        // change ui
+        iconTextButton -e -label $lbl -width 46 $srcbtn;
+        formLayout -e
+                   -attachForm $srcbtn "left" 0
+                   
+                   -attachControl $cmdl "left" 0 $srcbtn
+                   -attachForm $cmdl "right" 0 myPopupCMDLLay;
+        showWindow $wnd;
+    }
+
+    // ready to go
+    // setFocus $cmdl;
+}
+global proc myPopupCMDLkill(){
+    $wnd = "myPopupCMDLwindow";
+    if (`window -ex $wnd`)
+        deleteUI -wnd $wnd;
+}
+global proc myPopupCMDLtgl(string $cmdl, string $srcbtn){
+    // based on toggleCommandLineInputSourceType, from initCommandLine.mel
+    // Toggles the command line input source type.
+
+    int $hasPython = `exists python`;
+    if ($hasPython) {
+        string $curType = `commandLine -q -sourceType $cmdl`;
+        $curType = `tolower $curType`;
+        string $newType;
+        string $cmdLineAnnot;
+    
+        // get new type
+        switch ($curType) {
+            case "mel":
+                $newType = "python";
+                $cmdLineAnnot = (uiRes("m_initCommandLine.kCmdLineAnnotPython"));
+                break;
+            case "python":
+            default:
+                $newType = "mel";
+                $cmdLineAnnot = (uiRes("m_initCommandLine.kCmdLineAnnotMEL"));          
+                break;
+        }
+    
+        // set new type and annotation
+        commandLine -e -sourceType $newType -inputAnnotation $cmdLineAnnot $cmdl;
+    
+        // update button label
+        iconTextButton -e -label `labelFromCommandSourceType $newType` -width 46 $srcbtn;
+    
+        // update option var
+        optionVar -sv commandLineSourceType $newType;
+    }
+
+    // set focus to command line
+    setFocus $cmdl;
+}
+global proc myPopupCMDL(string $cmdType){
+    $cmdType = tolower($cmdType);
+    switch ($cmdType){
+        case "":
+        case "mel":
+            $cmdType = "mel";
+            break;
+        case "py":
+            $cmdType = "python";
+            break;
+        default:
+            break;
+    }
+    print {"src: " + $cmdType};
+    // python("import Qt");
+    python("import PySide2 as Qt");
+    int $m_x = python("Qt.QtGui.QCursor().pos().x()");
+    int $m_y = python("Qt.QtGui.QCursor().pos().y()");
+
+    // $m_x = 0;
+    // $m_y = 0;
+    print {$m_x + " x " + $m_y};
+    //    Check if the window exists.
+    //
+    newCMDLine $cmdType $m_x $m_y;
+}

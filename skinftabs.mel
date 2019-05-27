@@ -1,0 +1,243 @@
+//v0.0a -upd-   smart filtering
+//v0.0 
+
+//TODO:
+//  # fill treeView independently from current active tool and/or
+//    opened skin paint properties UI
+//  # save and restore tabs from file
+
+// sources:
+//  E:\Program Files\Autodesk\Maya2018\scripts\others\skinClusterInflMenu.mel
+//  E:\Program Files\Autodesk\Maya2018\scripts\others\artAttrSkinProperties.mel
+// skinClusterInflPopulate {"skinCluster"} "newTreeView" 0;
+
+source "artAttrSkinCallback.mel";
+
+// global string $gArtSkinInfluencesList;
+global string $gMySkInfluencesTreeLists[];
+$gMySkInfluencesTreeLists[0] = $gArtSkinInfluencesList;
+
+global proc createSkinInfTreeList(string $shelf,
+                                  string $formName,
+                                  string $filter){
+    
+    global string $gMySkinFilterField;
+    global string $gMySkInfluencesTreeLists[]; 
+    $sz = size($gMySkInfluencesTreeLists);
+
+    // get name
+    string $nm;
+    if ($formName != "")
+        $nm = $formName;
+    else{
+        string $last_filter = $nm;
+        if ($gMySkinFilterField != "" 
+                && `textField -ex $gMySkinFilterField`
+                && !`textField -q -io $gMySkinFilterField`){
+            $last_filter = `textField -q -tx $gMySkinFilterField`;
+            if ($last_filter != "")
+                $nm = `match "[a-zA-Z_0-9]+" $last_filter`;
+        }
+        if ($nm == ""){
+            string $usr_inp = `promptDialog -m "Tab Name"`;
+            
+            if ($usr_inp != "dismiss"){
+                $nm = `promptDialog -q -tx`;
+                if ($nm != "")
+                    $filter = $nm + "*";
+            }
+        }
+        $filter = $filter != "" ? $filter : $last_filter;
+    }
+    $nm = $nm != "" ? $nm : "envsList#";
+    // if ($formName == ""){
+    //     string $usr_inp = `promptDialog -m "Tab Name" -tx $nm`;
+        
+    //     if ($usr_inp != "dismiss")
+    //         $nm = `promptDialog -q -tx`;
+    // }
+    // else
+    //     $nm = $formName;
+    // reuse filter and its name for new tab
+    // $lay = `tabLayout -p $shelf`;
+    
+    setParent $shelf;
+    $listWidth = 100;
+    $listHeight = 200;
+    string $lListFrame = `frameLayout 
+        -collapsable false 
+        -labelVisible yes // Label is required otherwise the border does not appear
+        -label (uiRes("m_skinClusterInflMenu.kInfluencesListLabel"))
+        $nm`;
+
+        string $filterAndListLayout = `formLayout`;
+
+            string $influencesList = `treeView -w $listWidth -h $listHeight -numberOfButtons 2 -ahp yes "theSkinClusterInflList#"`;
+            
+            $artAttrSkinPopupMenu  = `popupMenu -button 3 -allowOptionBoxes false -parent $influencesList`;
+            treeView -edit
+                -contextMenuCommand ("artAttrSkinBuildPopupMenu \"" + $artAttrSkinPopupMenu+"\"")
+                $influencesList;
+
+            treeView -e -enableKeys 1 $influencesList;
+            string $formFilterField = filterUICreateField($influencesList,$filterAndListLayout);
+            string $pinBtn = `iconTextCheckBox -image "unpinned.png" -p $filterAndListLayout -w 20 -h 20 pinButton`;
+
+        setParent ..; // $filterAndListLayout
+    formLayout
+        -edit
+        -aof        $pinBtn "left" -20
+        -attachForm $pinBtn "top" 0
+        -attachForm $pinBtn "right" 0 
+        -attachForm $formFilterField "left" 0
+        -attachControl $formFilterField "right" 2 $pinBtn
+        -attachForm $formFilterField "top" 0
+        -attachNone $formFilterField "bottom"
+        -attachForm $influencesList "left" 0
+        -attachForm $influencesList "right"  0
+        -attachControl $influencesList "top" 0 $formFilterField
+        -attachForm $influencesList "bottom" 0
+        $filterAndListLayout;
+    // Setup Pin callback
+    iconTextCheckBox -e 
+                 -onc ("skinClusterInflPinCallback "+$pinBtn+" "+$influencesList+ " true")
+                 -ofc ("skinClusterInflPinCallback "+$pinBtn+" "+$influencesList+ " false")
+                 $pinBtn;
+    print {"infTreeView: " + $influencesList};
+
+    // fill with influences
+    string $skins[] = artSkinFindSkinClusterNodes();
+    skinClusterInflPopulate( $skins, $influencesList, 1 );
+    
+    // Influences list callbacks
+    treeView -edit -pressCommand 1 ("mySkinClusterInflMenuLockCallBack  (\""+$influencesList +"\")") $influencesList;
+    treeView -edit -pressCommand 2 ("skinClusterInflMenuColorCallBack (\""+$influencesList +"\")") $influencesList;
+    
+    // Selection callback
+    treeView -e -sc artSkinInflListChanging $influencesList;
+    $artCommand = "artAttrSkinPaintCtx";
+    treeView -e -scc ("artSkinInflListChanged "+$artCommand) $influencesList;
+
+    // update lock status
+    for ($item in `treeView -q -ch "" $influencesList`)
+        myArtSkinLockRefreshUI $item $influencesList;
+    
+    // find filter UI and return filter results
+    string $ff_childs[] = `formLayout -q -ca $formFilterField`;
+    string $filterField = $ff_childs[0];
+    print {"search field: " + $filterField, "io: " + `textField -q -io $filterField`};
+    // activate filter(results)
+    if ($filter != ""){
+        textField -e -tx $filter $filterField;
+        filterUIHandleField $influencesList $filterField;
+    }
+
+    if (!stringArrayContains($influencesList, $gMySkInfluencesTreeLists))
+        $gMySkInfluencesTreeLists[$sz] = $influencesList;
+    // print $gMySkInfluencesTreeLists;
+    
+    // override filter if its main ("All")
+    if ($formName == "All"){
+        $gMySkinFilterField = $filterField;
+        print {"new filter: " + $filterField};
+    }
+}
+
+global proc skinftabs(){
+    $wind = `window`;
+    $lay = `tabLayout
+            -snt 1
+            "infListShelf#"
+            `;
+    createSkinInfTreeList($lay, "All", "");
+    // shelfTabLayout -e -ntc ("tabLayout -p " + $lay) $lay;
+    $newTabCmd = `format -s $lay -s "" -s "" "createSkinInfTreeList \"^1s\" \"^2s\" \"^3s\""`;
+    shelfTabLayout -e -ntc $newTabCmd $lay;
+    showWindow $wind;
+    // createSkinInfTreeList $lay;
+}
+
+// some overrides
+// artSkinInvLockInf
+// original: \\scripts\others\skinClusterInflMenu.mel
+global proc mySkinClusterInflMenuLockCallBack( string $treeView, string $item, int $buttonState)
+{
+    // Get the attribute weight for the selected item and toggle it.
+    //
+    int $lockValue = 0;
+    if (`attributeQuery -n $item -ex liw`)
+        $lockValue = (`getAttr ( $item + ".liw" )`)? 0 : 1;
+    myArtSkinLockInfPassedIn($item, $lockValue);
+
+    // If additional items are selected in the tree view toggle the lock
+    // value for these items as well.
+    //
+    string $selections[] = `treeView -query -selectItem $treeView`;
+    if (stringArrayContains($item, $selections))
+    {
+        for ($s in $selections)
+            myArtSkinLockInfPassedIn($s, $lockValue);
+    }
+}
+
+// original: \\scripts\others\artAttrSkinCallback.mel
+global proc myArtSkinLockInfPassedIn(string $infl, int $lockValue)
+{
+    global string $gArtSkinInfluencesList;
+    global string $gMySkInfluencesTreeLists[];
+    $gMySkInfluencesTreeLists[0] = $gArtSkinInfluencesList;
+    if (`attributeQuery -n $infl -ex liw`) {
+        for ($influencesList in $gMySkInfluencesTreeLists){
+            if (!`treeView -exists $influencesList`)
+                continue;
+            string $cmdString = ("setAttr " + $infl + ".liw ");
+            $cmdString += $lockValue;
+
+            evalEcho $cmdString;
+
+            myArtSkinLockRefreshUI($infl, $influencesList);
+        }
+    }
+}
+// original: \\scripts\others\artAttrSkinCallback.mel
+global proc myArtSkinLockRefreshUI(string $infl, string $influencesList)
+{
+    if (`attributeQuery -n $infl -ex liw`) {
+        // global string $gArtSkinInfluencesList;
+        // Make sure the corresponding item is visible ...
+        treeView -edit -buttonVisible $infl 1 1 $influencesList;
+
+        // ... and set the icon accordingly
+        int $lockValue = (`getAttr ($infl + ".liw")`)? 1 : 0;
+        string $icon = ($lockValue)? "Lock_OFF_grey.png" : "Lock_ON.png";
+        treeView -edit -image $infl 1 $icon $influencesList;
+        // treeView -edit -image $infl 1 $icon $gMySkinInfluenceList;
+    }
+}
+
+// lock callback
+// skinClusterInflMenuLockCallBack
+//  treeView -edit -pressCommand 1 ("skinClusterInflMenuLockCallBack  (\""+$influencesList +"\")") $influencesList;
+
+// E:\Program Files\Autodesk\Maya2018\scripts\others\artAttrSkinProperties.mel
+// artAttrSkinCallback( "artAttrSkinPaintCtx" );
+// E:\Program Files\Autodesk\Maya2018\scripts\others\artAttrSkinCallback.mel
+//      treeView -e -sc artSkinInflListChanging $gArtSkinInfluencesList;
+//      treeView -e -scc ("artSkinInflListChanged "+$artCommand) $gArtSkinInfluencesList;
+
+// Warning: If the Layout created by this proc is modified, the following proc must r
+    // skinClusterInflGetPinControlFromTreeView && skinClusterInflGetFilterLayoutFromTreeView
+    //
+
+// artAttrSkinJointMenu( $influeceList, "artAttrSkinPaintCtx" );
+
+// // Set the callbacks and various global functions.
+// artAttrSkinCallback( "artAttrSkinPaintCtx" );
+
+// artisanRampCallback( "artAttrSkinPaintCtx" );
+
+// //Always start the tool in paint mode.
+// artAttrSkinPaintCtx -e -skinPaintMode 1 $currContext;
+
+// to reveal selected item
+// treeView -e -showItem $inflToReveal $gArtSkinInfluencesList;

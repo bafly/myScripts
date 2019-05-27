@@ -1,0 +1,40 @@
+//v0.0
+
+//WIP: getDeformedInRoot
+// removes all deformed shapes from defined root
+global proc int removeDeformed(string $root, string $styp){
+    $bad_defr_types = {
+        "curveWarp",
+        "skinCluster"
+    };
+    string $items[];
+    int $i;
+    $shapes = `listRelatives -ad -f -type $styp -ni $root`;
+    for ($sel in `listRelatives -p -f $shapes`){
+        $ls_deformed = `findRelatedDeformer $sel`;
+        // print {(string)$sel};
+        if (size($ls_deformed)){
+            for ($defr in $bad_defr_types){
+                $cur_typ = `objectType $ls_deformed[0]`;
+                if ($cur_typ == $defr){
+                    print ("\n Will be delete: " + $ls_deformed[0] + "\n");
+                    $items[$i++] = $sel;
+                }
+            }
+        }
+    }
+    $res = size($items);
+    delete $items;
+    print $items;
+    return $res;
+}
+
+global proc string[] getDeformedInRoot(
+        string $root, string $exclude[]){
+
+    // search geoms in root
+    // args:
+    //  - exclude, string[] - sub root childs that need to
+    //      exclude from main root
+    print "";
+}

@@ -1,24 +1,272 @@
+// v0.5f upd setdist()
+//       new doSetDist(), setdistrad();
+// v0.5e upd [global] change var(init point) gBaVecA >> gBaVecO
+//       new manipcp(), flatvec(), vecX(), vecAx(), $gBaVecO
+// v0.5d fix doFindVerts(): selection logic, xform by each component item
+//       upd getVecData()
+// v0.5c new snapmanip(), pinpiv()
+// v0.5b fix vecplane(): fix bad reading data from argument,
+//       fix ext(): symmetrical
+//       fix doFindVerts(): fix duplicated items
+// v0.5a upd getManipTransforms(): if currentCtx is selectSuperContext switch to $gMove
+//       upd vecplane: UI things extracted, vec(): insert UI tool, logic
+//       new UI_basis_chooser(), orthovec()
+// v0.5  upd getVectors(): now edges can be selected
+// v0.4f new chkvecplane()
+// v0.4e upd putonvec(), getVectors(), getVecData(), doVec() no double3 can be selected
+// v0.4e upd getVecData(), getVectors(), vecplane() now transform can be used
+// v0.4d new setVecO()
+//       upd putonvec() - symmetry
+// v0.4c new setdist()
+// v0.4b new orthoplane()
+//       upd vecplane() now you can select one/two pnt(s) and define orthoplane
+// v0.4a new getVectors()
+//       upd putonplane() - select items: first three - plane, others - targets
+//       upd doVecPlane() - solve if transforms are selected
+// v0.4a new editveca(), editvecplane(), extmove() - for relative extensions
+// v0.4  upd vec(), vecplane(), ext() - recode
+//       new doExtend() - per selection: using gvars
+//       new getVecData() - returns from any float sleections:
+//           start point and the vector 
 // v0.3  new manipjnt()
 // v0.2a new getratio()
 // v0.2  new putonplane()
 // v0.1  new putonvec()
+
+//.............            structure             .............//
+///////////////           VECTOR TOOLS           ///////////////
+///////////////       VECTOR PROJECT TOOLS       ///////////////
+///////////////           MATRIX TOOLS           ///////////////
+///////////////            PLANE TOOLS           ///////////////
+///////////////            POLY TOOLS            ///////////////
+///////////////            JOINT TOOLS           ///////////////
+///////////////            OTHER TOOLS           ///////////////
+///////////////             UTILITIES            ///////////////
+
 
 ////////////////////////////////////////////////////////////////
 ///////////////           VECTOR TOOLS           ///////////////
 
 global proc vector vec(){
 
-    global vector $gBaVec, $gBaVecA;
+    global vector $gBaVec, $gBaVecO;
+
+    vector $vecs[] = getVectors({});
+    vector $vec_data[] = getVecData({});
+
+    if (size($vecs)<1){
+        $gBaVec = <<0, 0, 0>>;
+        $gBaVecO = <<0, 0, 0>>;
+    }
+
+    if (size($vecs)<2){
+        $gBaVecO = $vecs[0];
+        $indx = UI_basis_chooser("Choose Ortho Vector");
+        if ($indx > -1)
+            $gBaVec = orthovec($indx);
+    }
+    else{
+        // print $vec_data;
+        float $len1 = mag($vec_data[1]);
+        float $len2 = mag($vec_data[0]);
+        print {$len1 + ", " + $len2};
+        if ($len1 > 0){
+            $gBaVec = $vec_data[1];
+            // $len1 + " $gBaVec Updated"};
+        }
+        if ($len2 > 0){
+            $gBaVecO = $vec_data[0];
+            // $len2 + " $gBaVecO Updated"};
+        }
+    }
+    return $gBaVec;
+}
+
+global proc vector flatvec(vector $vec, int $idx){
+    global vector $gBaVec;
+
+    if (!mag($vec)){
+        if (mag($gBaVec))
+            $vec = $gBaVec;
+        else{
+            vector $vecs[] = getVectors({});
+            $vec = $vecs[1] - $vecs[0];
+        }
+    }
+
+    float $vec_f[] = $vec;
+    for ($i=0; $i<3; $i++)
+        $vec_f[$i] = $vec_f[$i] * ($idx==$i);
+    $vec = $vec_f;
+    // float $mult[] = {1, 0, 0};
+    // int $i;
+    // for ($m in $mult)
+    //     $vec[$i++] = $vec[$i] * $m;
+    // $gBaVec = $vec;
+    return $vec;
+}
+
+global proc vector vecx(){
+    global vector $gBaVec;
+    $gBaVec = flatvec($gBaVec, 0);
+    return $gBaVec;
+}
+
+global proc vector vecAx(){
+    global vector $gBaVecA;
+    $gBaVecA = flatvec($gBaVecA, 0);
+    return $gBaVecA;
+}
+
+global proc chkvec(){
+    global vector $gBaVec, $gBaVecO;
+    joint -p ($gBaVecO.x) ($gBaVecO.y) ($gBaVecO.z);
+    joint -p ($gBaVecO.x + $gBaVec.x)
+            ($gBaVecO.y + $gBaVec.y)
+            ($gBaVecO.z + $gBaVec.z);
+}
+
+global proc vector vec_m(){
+    // mirror version
+    global vector $gBaVec, $gBaVecO;
+    string $pts[] = `ls -fl -os -type float3`;
+    $pts_sz = size($pts);
+    
+    if ($pts_sz > 2 && !($pts_sz%2)){
+        vector $vec_data[] = getVecData({$pts[0], $pts[2]});
+        // print $vec_data;
+        float $len1 = mag($vec_data[1]);
+        float $len2 = mag($vec_data[0]);
+        print {$len1 + ", " + $len2};
+        if ($len1 > 0){
+            $gBaVec = $vec_data[1];
+            // $len1 + " $gBaVec Updated"};
+        }
+        if ($len2 > 0){
+            $gBaVecO = $vec_data[0];
+            // $len2 + " $gBaVecO Updated"};
+        }
+        
+    }
+
+    return $gBaVec;
+}
+
+global proc vector orthovec(int $i){
+    vector $vplane[3];
+    $vplane = {
+        <<1, 0, 0>>,
+        <<0, 1, 0>>,
+        <<0, 0, 1>>
+    };
+    return $vplane[$i];
+}
+//TODO: not compatible with mirror select
+global proc vector setVecO(){
+    global vector $gBaVecO;
+    // old // P from first selected component
+    // vector $vecs[] = getVectors({});
+    // if (size($vecs) && mag($vecs[0]))
+    //     $gBaVecO = $vecs[0];
+    
+    // P from center of selected items bounding box
+    float $bb[6] = bb({});
+    $pA = <<$bb[0], $bb[1], $bb[2]>>;
+    $pB = <<$bb[3], $bb[4], $bb[5]>>;
+    $gBaVecO = $pA + ( ($pB - $pA) / 2 );
+    return $gBaVecO;
+}
+
+global proc vector setVecA(){
+    global vector $gBaVecA;
+    vector $vecs[] = getVectors({});
+    // if (size($vecs) && mag($vecs[0]))
+    $gBaVecA = $vecs[1] - $vecs[0];
+    return $gBaVecA;
+}
+
+global proc vector editveca(){
+    global vector $gBaVecO;
+    vector $P;
+    $lssl = `ls -sl -fl`;
+    $P = `xform -q -ws -t $lssl[0]`;
+    if ($P)
+        $gBaVecO = $P;
+    return $P;
+}
+
+global proc vector vec_(){
+
+    global vector $gBaVec, $gBaVecO;
 
     string $lssl[] = `ls -fl -sl`;
     if (size($lssl))
-        $gBaVecA = doVec($lssl[0], "");
+        $gBaVecO = doVec($lssl[0], "");
     if (size($lssl) > 1)
         $gBaVec = doVec($lssl[0], $lssl[1]);
     else
-        $gBaVec = $gBaVecA;
+        $gBaVec = $gBaVecO;
 
     return $gBaVec;
+}
+
+global proc vector[] getVecData(string $pts[]){
+    // returns, vector[2]:
+    //  0 - position of first point
+    //  1 - vector from first two points
+    //      (edge can be selected)
+
+    vector $point_with_vec[2];
+    vector $vecs[2];
+    vector $vec, $a;
+    float $float_array[3];
+    if (!size($pts)){
+        print {" Getting vectors form selected components"};
+        $pts = doFindVerts(`ls -fl -os -type float3 -type double3`);
+    }
+    if (!size($pts)){
+        print {" Components not found, \
+        getting vectors from selected transforms"};
+        $pts = `ls -sl -tr`;
+        if (!size($pts)){
+            print {"! Not enough data"};
+            return $point_with_vec;
+        }
+    }
+    int $p;
+    float $pos[];
+    for ($pt in $pts){
+        $pos = `xform -q -ws -t $pt`;
+        $float_array[$p++] = $pos[0];
+        $float_array[$p++] = $pos[1];
+        $float_array[$p++] = $pos[2];
+    }
+    print {(string)`format 
+        -s $float_array[0] 
+        -s $float_array[1] 
+        -s $float_array[2]
+        " [getVecData] _pA: ^1s ^2s ^3s"`};
+    print {(string)`format
+        -s $float_array[3] 
+        -s $float_array[4] 
+        -s $float_array[5]
+        " [getVecData] _pB: ^1s ^2s ^3s"`};
+    $sz = size($float_array);
+    print {"$sz: " + $sz};
+    if (!$sz || $sz < 6)
+        return $point_with_vec;
+    for ($i=0, $p=0; $i<6; $i+=3, $p++){
+        $a = <<$float_array[$i], 
+               $float_array[$i+1],
+               $float_array[$i+2]>>;
+        $vecs[$p] = $a;
+    }
+    $vec = $vecs[1] - $vecs[0];
+    $point_with_vec[0] = $vecs[0];
+    $point_with_vec[1] = $vec;
+    print {"A: " + $vecs[0]};
+    print {"a: " + $vec};
+    return $point_with_vec;
 }
 
 global proc vecmove(float $inv){
@@ -43,7 +291,7 @@ global proc vector doVec(string $a, string $b){
     vector $vec, $B;
     vector $A = `xform -q -ws -rp $a`;
 
-    if (size(`ls -type float3 $a`))
+    if (size(`ls -type float3 -type double3 $a`))
         $A = `xform -q -ws -t $a`;
     
     if ($b != ""){
@@ -61,6 +309,7 @@ global proc vector doVec(string $a, string $b){
 
 global proc float dist(){
     
+    global float $gBaDist;
     float $len;
     vector $pos;
     vector $cur_pos;
@@ -76,7 +325,89 @@ global proc float dist(){
         $pos = $cur_pos;
         print ("len: " + $len + " || delta: " + $delta_pos + "\n");
     }
+    $gBaDist = $len;
     return $len;
+}
+
+global proc setdistrad(float $newdist){
+    global float $gBaDist;
+    // set radial distance
+    string $lssl[] = `ls -sl -fl`;
+    vector $O = bbctr($lssl);
+    if (!$newdist)
+        if ($gBaDist > 0.0)
+            $newdist = $gBaDist;
+    if ($newdist <= 0.0){
+        vector $B = getVector($lssl[0]);
+        $newdist = $B - $O;
+    }
+    doSetDist $O $newdist $lssl;
+}
+global proc setdist(float $newdist){
+    // ! track order selection
+    // last selected vertex will change its position
+    global float $gBaDist;
+    float $len, $dist;
+    // global vector $gBaVec;
+    global vector $gBaVec, $gBaVecO;
+    if (!$newdist)
+        if ($gBaDist > 0.0)
+            $newdist = $gBaDist;
+        else
+            $newdist = mag($gBaVec);
+    print{(string)`format -s $newdist " dist: ^1s"`};
+    vector $P, $P1, $vec;
+    
+    $lssl = `ls -fl -os`;
+    vector $O = `xform -q -ws -t $lssl[0]`;
+    stringArrayRemoveAtIndex(0, $lssl);
+    print {" items: "};
+    print $lssl;
+    doSetDist $O $newdist $lssl;
+}
+
+global proc doSetDist(vector $O, float $newdist, string $lssl[]){
+    vector $P;
+    for ($sel in $lssl){
+        $P = `xform -q -ws -t $sel`;
+        $vec = $P - $O;
+        $dist = mag($vec);
+        print{(string)`format -s $dist " cur dist: ^1s"`};
+        $scale = $newdist / $dist;
+        $vec *= $scale;
+        $P1 = $O + $vec;
+        print {"new_pos: " + $P1};
+        xform -ws -t ($P1.x) ($P1.y) ($P1.z) $sel;
+    }
+}
+
+global proc setdist_m(){
+    // mirror version
+    // ! define vec first
+    // ! track order selection
+    // last selected vertex will change its position
+    global vector $gBaVec, $gBaVecO;
+    float $newdist = mag($gBaVec);
+
+    // vector $P = $gBaVecO;
+    vector $P, $P1, $vec;
+    
+    $lssl = `ls -fl -os`;
+    print {"items:"};
+    print $lssl;
+    for ($i=0; $i<size($lssl); $i+=2){
+        $sel = $lssl[$i];
+        $P = `xform -q -ws -t $sel`;
+        $vec = $P - $gBaVecO;
+        $dist = mag($vec);
+        $scale = $newdist / $dist;
+        $vec *= $scale;
+        $P1 = $gBaVecO + $vec;
+        print {"new_pos: " + $P1};
+        select -sym $sel;
+        print `ls -fl -sl`;
+        move -smn ($P1.x) ($P1.y) ($P1.z);
+    }
 }
 
 global proc float doDist(string $a, string $b){
@@ -124,12 +455,14 @@ global proc float doVecRatio(vector $vecA, vector $vecB){
 
 
 global proc float vecratio(){
-    global vector $gBaVec;
+    global vector $gBaVec, $gBaVecA;
     if (!mag($gBaVec))
         return 0;
-
-    string $lssl[] = `ls -fl -sl`;
-    $vec = doVec($lssl[0], $lssl[1]);
+    vector $vec = $gBaVecA;
+    if (!mag($gBaVecA)){
+        string $lssl[] = `ls -fl -sl`;
+        $vec = doVec($lssl[0], $lssl[1]);
+    }
     $rat = doVecRatio($gBaVec, $vec);
     return $rat;
 }
@@ -155,44 +488,31 @@ global proc vector vecratio3(){
     return $rat;
 }
 global proc putonvec(){
-
+    // symmetry
     // first user must use vec() to initiate data
-    $lssl = `ls -sl -fl`;
+    $lssl = doFindVerts(`ls -sl -fl -type double3 -type float3`);
+    $lssl = stringArrayCatenate($lssl, `ls -sl -fl -tr`);
     vector $pos;
     for ($sel in $lssl){
         $pos = doPutOnVec($sel);
-        xform -ws -t ($pos.x) ($pos.y) ($pos.z) $sel;
+        select -sym $sel;
+        move -ws -smn ($pos.x) ($pos.y) ($pos.z);
     }
     
 }
 
 global proc vector doPutOnVec(string $sel){
     
-    global vector $gBaVec, $gBaVecA;
+    global vector $gBaVec, $gBaVecO;
     
     vector $p1;
-    if ($gBaVec || $gBaVecA){
+    if ($gBaVec || $gBaVecO){
         $C = doVec($sel, "");
-        $p1 = projectOnVec($C, $gBaVec, $gBaVecA);
+        $p1 = projectOnVec($C, $gBaVec, $gBaVecO);
     }
 
     return $p1;
 
-}
-
-global proc vector projectOnVec(vector $C, vector $vec, vector $A){
-
-    // args:
-    // - $C     - vector - point that be projected on $vec
-    // - $vec   - vector - line where point will be projected
-    // - $A     - vector - inital/start point of vector
-
-    $c = $C - $A;
-    $vec_nrm = unit($vec);
-    $dot = $c * $vec_nrm;
-    $c1 = $vec_nrm * $dot;
-    $C1 = $c1 + $A;
-    return $C1;
 }
 
 global proc float getratio(){
@@ -221,10 +541,25 @@ global proc float getratio(){
     return $ratio;
 }
 
+global proc vector projectOnVec(vector $C, vector $vec, vector $A){
+
+    // args:
+    // - $C     - vector - point that be projected on $vec
+    // - $vec   - vector - line where point will be projected
+    // - $A     - vector - inital/start point of vector
+
+    $c = $C - $A;
+    $vec_nrm = unit($vec);
+    $dot = $c * $vec_nrm;
+    $c1 = $vec_nrm * $dot;
+    $C1 = $c1 + $A;
+    return $C1;
+}
+
 ////////////////////////////////////////////////////////////////
 ///////////////           MATRIX TOOLS           ///////////////
 
-// usage(doRotMat):
+// usage:
 //  vector $vecA = <<0, 1.5, 0.8>>;
 //  vector $vecB = <<0, 0.5, -0.3>>;
 //  vector $vecX = unit(cross($vecA, $vecB));    // normalized crossProduct(rotation axis)
@@ -272,7 +607,7 @@ global proc vector multmtxvec(){
     if (!$gBaVec)
         vec();
 
-    $Rv = doMultMtxVec($gBaMtx, $gBaVec);
+    $Rv = doMultMatVec($gBaMtx, $gBaVec);
     return $Rv;
 }
 
@@ -325,7 +660,52 @@ global proc matrix floatArrayToMatrix(float $t[]){
 ///////////////            PLANE TOOLS           ///////////////
 
 global proc ext(){
+    // Define plane and the vector
+    // items will be extended to a plane by vector
+    // Defined gBaExt for extrel (relative extend)
+    global vector $gBaVec;
+    global vector $gPlane[];
+    global vector $gBaExt;
 
+    float $eps = 0.0001;
+    if (!size($gPlane))
+        return;
+    if (mag($gBaVec) < $eps)
+        return;
+
+    // $lssl = `ls -sl -fl -type float3`;
+    string $items[];
+    $lssl = `ls -sl -fl`;
+    $ls_trfrs = `ls -tr $lssl`;
+    $vtxs = `doFindVerts $lssl`;
+    $items = stringArrayCatenate($items, $ls_trfrs);
+    $items = stringArrayCatenate($items, $vtxs);
+    vector $P, $P1;
+    for ($sel in $items){
+        $P = `xform -q -ws -t $sel`;
+        $P1 = doExtend($P, $gBaVec, $gPlane);
+        print {" Moving: " + $sel};
+        print {"  To: " + $P1};
+        select -sym $sel;
+        move -smn -ws ($P1.x) ($P1.y) ($P1.z);
+    }
+    $gBaExt = $P1 - $P;
+    // $gBaExtVec = $P1;
+}
+
+global proc extrel(){
+    global vector $gBaExt;
+    string $items[];
+    $lssl = `ls -sl -fl`;
+    $ls_trfrs = `ls -tr $lssl`;
+    $vtxs = `doFindVerts $lssl`;
+    $items = stringArrayCatenate($items, $ls_trfrs);
+    $items = stringArrayCatenate($items, $vtxs);
+    xform -r -t ($gBaExt.x) ($gBaExt.y) ($gBaExt.z) $lssl;
+}
+
+global proc ext_(){
+    // Define plane and the vector
     global vector $gPlane[];
     if (!size($gPlane))
         return;
@@ -369,12 +749,169 @@ global proc ext(){
     }
 }
 
+global proc extmove(){
+    global vector $gBaVec, $gBaVecO;
+    global vector $gPlane[];
+    $lssl = `ls -sl -fl`;
+    vector $P1 = doExtend($gBaVecO, $gBaVec, $gPlane);
+    vector $ext = $P1 - $gBaVecO;
+
+    move -r -ws ($ext.x) ($ext.y) ($ext.z) $lssl;
+}
+
+global proc vector[] editvecplane(){
+    // using gPlane, putting in relative with first point gBaVecO
+    global vector $gPlane[], $gRelPlane[];
+    global vector $gBaVecO;
+    print $gPlane;
+    global vector $gRelPlane[3];
+    $gPlane[0] = $gBaVecO + $gRelPlane[0];
+    $gPlane[1] = $gBaVecO + $gRelPlane[1];
+    $gPlane[2] = $gBaVecO + $gRelPlane[2];
+    return $gPlane;
+}
+
+global proc vector doExtend(
+        vector $P, vector $p, vector $plane[]){
+    // plane is vectors array of 3 points
+    global vector $gBaExtVec;
+    vector $P1;
+    $p = unit($p);    
+    float $dist = getDistanceToPlane($P, $p, $plane);
+    // int $dir = $dist < 0 ? -1 : 1;
+    int $dir = 1;
+    
+    float $d = $dist * $dir;
+    $P1 = $P - ($p * $d);
+    $gBaExtVec = $P1;
+    return $P1;
+}
+
 global proc vector[] vecplane(){
+    global vector $gPlane[3];
+    global vector $gRelPlane[3];
+    $pts = `ls -sl -fl -type float3 -type double3`;
+    $pts = stringArrayCatenate($pts, `ls -sl -tr`);
+    vector $pt_vecs[] = getVectors($pts);
+    vector $vecs[3];
+    $vecs_sz = size($pt_vecs);
+    if (!size($pts))
+        return $vecs;
+    if ($vecs_sz > 2){
+        print {"A"};
+        $vecs = doVecPlane($pts);
+    }
+    else{
+        // ortho plane
+        $msg = "Define Plane:";
+        int $plane_n = UI_basis_chooser($msg);
+        // string $user_inp = `confirmDialog 
+        //     -m "Define Plane:"
+        //     -b "X" -b "Y" -b "Z" 
+        //     -b $xbt -db $xbt -cb $xbt -ds $xbt
+        //     `;
+        // if ($user_inp == $xbt)
+        //     return $vecs;
+        // int $plane_n;
+        // switch ($user_inp){
+        //     case "X":
+        //         $plane_n = 0;
+        //         break;
+        //     case "Y":
+        //         $plane_n = 1;
+        //         break;
+        //     case "Z":
+        //         $plane_n = 2;
+        //         break;
+        //     default:
+        //         break;
+        // }
+        if ($vecs_sz < 2){
+            print {"B"};
+            $vecs = orthoplane($plane_n);
+            float $float_vec[] = $pt_vecs[0];
+            $mag = $float_vec[$plane_n];
+            float $vecA[] = $vecs[0];
+            float $vecB[] = $vecs[1];
+            float $vecC[] = $vecs[2];
+            $vecA[$plane_n] = $mag;
+            $vecB[$plane_n] = $mag;
+            $vecC[$plane_n] = $mag;
+            $vecs[0] = (vector)$vecA;
+            $vecs[1] = (vector)$vecB;
+            $vecs[2] = (vector)$vecC;
+        }
+        else{
+            print {"C: 3d axis choosed"};
+            float $vec_f[3] = {0, 0, 0};
+            $vec_f[$plane_n] = 1.0;
+            print {"ortho vec: "};
+            vector $vec = $vec_f;
+            print {$vec};
+            $pt_vecs[2] = $pt_vecs[0] + $vec;
+            print $pt_vecs;
+            $vecs = $pt_vecs;
+        }
+    }   
+    $chk = mag($vecs[0]) * mag($vecs[1]) * mag($vecs[2]);
+    if ($chk > 0)
+        $gPlane = $vecs;
+    vector $init = $vecs[0];
+    $gRelPlane[0] = $init - $vecs[0];
+    $gRelPlane[1] = $init - $vecs[1];
+    $gRelPlane[2] = $init - $vecs[2];
+    return $gPlane;
+}
+
+global proc vector[] orthoplane(int $i){
+    vector $vplane[3];
+    vector $vec;
+    $vplane = {
+        <<1, 0, 0>>,
+        <<0, 1, 0>>,
+        <<0, 0, 1>>
+    };
+    $vplane[$i] = $vec;
+    return $vplane;
+}
+
+global proc vector[] doVecPlane(string $pts[]){
+    // returns first three points positions
+    //  (faces can be selected)
+    float $float_array[] = getVectors($pts);
+    $sz = size($float_array);
+    vector $a;
+    vector $vplane[3];
+    if ($sz < 9)
+        return $vplane;
+    for ($i=0, $p=0; $i<9; $i+=3, $p++){
+        // print {$i, $p};
+        // print {$float_array[$i]};
+        $a = <<$float_array[$i], 
+               $float_array[$i+1],
+               $float_array[$i+2]>>;
+        $vplane[$p] = $a;
+    }
+    return $vplane;
+}
+
+global proc chkvecplane(){
+    global vector $gPlane[];
+    vector $vec;
+    $cmd = "polyCreateFacet -ch 0 -tx 1 -s 1";
+    for ($vec in $gPlane){
+        $cmd+= " -p " + $vec;
+    }
+    // print {$cmd};
+    evalEcho($cmd);
+}
+
+global proc vector[] vecplane_(){
 
     global vector $gPlane[];
     // if (size($gPlane))
     $ls_pts = `ls -fl -sl -type float3`;
-    if (size($ls_pts) && size($ls_pts) == 3){
+    if (size($ls_pts) && size($ls_pts) > 2){
     
         vector $O = `xform -q -ws -t $ls_pts[0]`;
         vector $A = `xform -q -ws -t $ls_pts[1]`;
@@ -401,8 +938,10 @@ global proc vector doPutOnPlane( vector $vecData[],
     $b = $plane[2] - $O;
     if (size($vecData) > 1)
         $p = unit($vecData[1] - $vecData[0]);
-    else
-        $p = unit($P - $O);
+    else{
+        $p = getPlaneNormal($plane);
+        // $p = unit($P - $O);
+    }
     $OP = $P - $O;
     $n = unit(cross($a, $b));
     $dot = dot($p, $n);
@@ -425,18 +964,39 @@ global proc vector doPutOnPlane( vector $vecData[],
     return $P1;
 }
 global proc putonplane(){
+    string $lssl[] = `ls -fl -sl`;
+    doputonplane($lssl);
+}
+global proc doputonplane(string $lssl[]){
+    // put on plane last selected objects
+    // plane can be defined by selecting first three
+    //   objects(vertices, transforms)
+    vector $P;
+    string $plane_items[3];
+    $plane_items[0] = $lssl[0];
+    $plane_items[1] = $lssl[1];
+    $plane_items[2] = $lssl[2];
+    vector $vecplane[] = doVecPlane($plane_items);
+    vector $plane_n = getPlaneNormal($vecplane);
+    stringArrayRemoveAtIndex(0, $lssl);
+    stringArrayRemoveAtIndex(0, $lssl);
+    stringArrayRemoveAtIndex(0, $lssl);
+    for ($trg in $lssl){
+        $P = getVector($trg);
+        $mov = `doExtend $P $plane_n $vecplane`;
+        move ($mov.x) ($mov.y) ($mov.z) $trg;
+    }
+}
 
-    global vector $gPlane[];
+global proc vector getPlaneNormal(vector $plane[]){
 
-    // check plane if poly selected
-    if (!size($gPlane))
-        return;
-    // vector 
-    // ideally it should be edge, closest vertex
-    //  will be extended
-    // if vtx selected just project by normal
-    
-    // if edge selected
+    vector $A = $plane[0];
+    vector $B = $plane[1];
+    vector $C = $plane[2];
+    $a = unit($B - $A);
+    $b = unit($C - $A);
+    $c = unit(cross($a, $b));
+    return $c;
 }
 
 global proc float getDistanceToPlane(
@@ -462,7 +1022,7 @@ global proc float getDistanceToPlane(
     $dot *= $sign;
     // print ("  Nominator: " + ($OP * $n) + "\n");
     // print ("Denominator: " + ($p * $n) + "\n");
-    $d = ($OP * $n) / ($p * $n);
+    float $d = ($OP * $n) / ($p * $n);
     return $d;
 }
 
@@ -471,10 +1031,17 @@ global proc float getDistanceToPlane(
 global proc string[] doFindVerts(string $lssl[]){
     
     string $sel, $comp;
-    string $verts[] = `filterExpand -sm 31 $lssl`;
+    string $verts[];
+    // don't tracks selection order
+    if (size($lssl))
+        $lssl = `ls -fl -type float3 -type double3 $lssl`;
+    else
+        $lssl = `ls -os -fl -type float3 -type double3`;
+    int $CHK_VTX = size(`filterExpand -sm 31 $lssl`);
     string $edgs[];
     string $pat = "vtx[^1s]";
-    if (!size($verts)){
+    $verts = $lssl;
+    if (!$CHK_VTX){
         int $v;
         $edgs = doFindEdges($lssl);
         // convert edge to verts
@@ -483,7 +1050,7 @@ global proc string[] doFindVerts(string $lssl[]){
             $comps_info = `polyInfo -ev $sel`;
             // $line = $comps_info[0];
             for ($line in $comps_info)
-                // $id = 8;
+                // $id = 99;
                 for ($id in pinfo($line)){
                     $comp = `format -s $id $pat`;
                     $vtx = `substitute "[^.]+$" $sel $comp`;
@@ -491,6 +1058,7 @@ global proc string[] doFindVerts(string $lssl[]){
                 }
         }
     }
+    $verts = stringArrayRemoveDuplicates($verts);
     return $verts;
 }
 
@@ -599,6 +1167,72 @@ global proc string doVecJnt(vector $pos, vector $rot, string $name){
 ////////////////////////////////////////////////////////////////
 ///////////////            OTHER TOOLS           ///////////////
 
+global proc float[] bb(string $lssl[]){
+    // get bb float[6]
+    
+    if (!size($lssl))
+        $lssl = `ls -fl -sl`;
+
+    float $miX, $miY, $miZ;
+    float $maX, $maY, $maZ;
+    float $Xs[], $Ys[], $Zs[];
+
+    int $i = 0;
+    for ($sel in $lssl){
+        $pos = `xform -q -ws -t $sel`;
+        $Xs[$i] = $pos[0];
+        $Ys[$i] = $pos[1];
+        $Zs[$i] = $pos[2];
+        $i++;
+    }
+    // min/max X
+    $bb[0] = floatArrayMin($Xs);
+    $bb[3] = floatArrayMax($Xs);
+    // min/max Y
+    $bb[1] = floatArrayMin($Ys);
+    $bb[4] = floatArrayMax($Ys);
+    // min/max Z
+    $bb[2] = floatArrayMin($Zs);
+    $bb[5] = floatArrayMax($Zs);
+    
+    return $bb;
+}
+
+global proc vector bbctr(string $lssl[]){
+    $bb = bb($lssl);
+    $pA = <<$bb[0], $bb[1], $bb[2]>>;
+    $pB = <<$bb[3], $bb[4], $bb[5]>>;
+    vector $vecO = $pA + ( ($pB - $pA) / 2 );
+    return $vecO;
+}
+
+global proc manipcp(){
+    // center manip of selected items (bb of selection)
+    $cp = bbctr({});
+    manipPivot -p ($cp.x) ($cp.y) ($cp.z);
+}
+
+global proc snapmanip(){
+    // $pos_data = getManipTransforms();
+    vector $pos = `manipPivot -q -p`;
+    vector $rot = `manipPivot -q -o`;
+    $lssl = `ls -sl`;
+    for ($sel in $lssl)
+        xform -ws -t ($pos.x) ($pos.y) ($pos.z)
+                  -ro ($rot.x) ($rot.y) ($rot.z) $sel;
+}
+
+global proc pinpiv(){
+    $pos_data = getManipTransforms();
+    vector $pos = $pos_data[0];
+    vector $rot = $pos_data[1];
+    manipPivot
+        -pin 1
+        -p ($pos.x) ($pos.y) ($pos.z) 
+        -o ($rot.x) ($rot.y) ($rot.z)
+        ;
+}
+
 global proc vector getManipPos_(){
     
     vector $pos;
@@ -618,32 +1252,54 @@ global proc vector getManipPos_(){
 
 global proc vector[] getManipTransforms(){
     
+    global string $gMove;
     vector $pos;
     vector $rot;
     vector $vecs[];
     string $manip = `currentCtx`;
+    if ($manip == "selectSuperContext"){
+        setToolTo $gMove;
+        $manip = `currentCtx`;
+    }
     // global vector $gBaVec;
     // global vector $gBaRotVec;
-    if ($manip != ""){
-        print {"Manip: " + $manip};
-        $typ = `match "^[a-zA-Z][a-z]+" $manip`;
-        $part2 = toupper(startString($typ, 1)) + endString($typ, size($typ)-1);
-        // vector $pos = `manipMoveContext -q -p $part2`;
-        $tool = `format -s $part2 "manip^1sContext"`;
-        $eval_pos = `format -s $tool -s $part2 "^1s -q -p ^2s"`;
-        $eval_rot = `format -s $tool -s $part2 "^1s -q -oa ^2s"`;
-        $pos = eval($eval_pos);
-        print {"Tool: " + $part2};
-        if ($part2 == "Rotate"){
-            print {"Roate"};
-            vector $rad_rot = eval($eval_rot);
-            $rot = rad2degVector($rad_rot);
-            // $gBaRotVec = $rot;
-        }
-        // $gBaVec = $pos;
+    print {"Manip: " + $manip};
+    $typ = `match "^[a-zA-Z][a-z]+" $manip`;
+    $part2 = toupper(startString($typ, 1)) + endString($typ, size($typ)-1);
+    // vector $pos = `manipMoveContext -q -p $part2`;
+    $tool = `format -s $part2 "manip^1sContext"`;
+    $eval_pos = `format -s $tool -s $part2 "^1s -q -p ^2s"`;
+    $eval_rot = `format -s $tool -s $part2 "^1s -q -oa ^2s"`;
+    $pos = eval($eval_pos);
+    print {"Tool: " + $part2};
+    if ($part2 == "Rotate"){
+        print {"Roate"};
+        vector $rad_rot = eval($eval_rot);
+        $rot = rad2degVector($rad_rot);
+        // $gBaRotVec = $rot;
     }
+    // $gBaVec = $pos;
     $vecs = {$pos, $rot};
     return $vecs;
+}
+
+///////////////             UTILITIES            ///////////////
+global proc float floatArrayMin(float $vals[]){
+    float $min = $vals[0];
+    for ($i=1; $i<size($vals); $i++){
+        if ($vals[$i] < $min) 
+            $min = $vals[$i];
+    }
+    return $min;
+}
+
+global proc float floatArrayMax(float $vals[]){
+    float $max = $vals[0];
+    for ($i=1; $i<size($vals); $i++){
+        if ($vals[$i] > $max) 
+            $max = $vals[$i];
+    }
+    return $max;
 }
 
 global proc vector rad2degVector(vector $rads){
@@ -688,3 +1344,91 @@ global proc addToIsolate(string $lssl[]){
         sets -add $set $lssl;
     }
 }
+
+global proc float[] getVector(string $sel){
+    float $float_array[];
+    float $point[];
+    string $lssl[] = `ls -sl -fl -type float3 -type double3 $sel`;
+    if (!size($lssl))
+        $lssl = `ls -sl -fl -type float3 -type double3`; 
+    
+    if (size($lssl))
+        $float_array = `xform -q -ws -t $sel`;
+    else{
+        $lssl = `ls -tr $sel`;
+        if (!size($lssl))
+            $lssl = `ls -sl -tr $sel`;
+        if (!size($lssl))
+            return $float_array;
+        int $f;
+        for ($sel in $lssl){
+            $point = `xform -q -ws -rp $sel`;
+            for ($p in $point)
+                $float_array[$f++] = $p;
+        }
+    }
+    return $float_array;
+}
+
+global proc float[] getVectors(string $lssl[]){
+    string $pts[];
+    float $float_array[];
+    float $point[];
+    if (size($lssl)){
+        $pts = doFindVerts(`ls -fl -type float3 -type double3 $lssl`);
+        $pts = stringArrayCatenate($pts, `ls -tr $lssl`);
+    }
+    else{
+        $pts = doFindVerts(`ls -os -fl -type float3 -type double3`);
+        $pts = stringArrayCatenate($pts, `ls -sl -tr`);
+    }
+    print {" [getVectors] items: "};
+    print $pts;
+    int $p;
+    float $pos[];
+    for ($sel in $pts){
+        $pos = `xform -q -ws -t $sel`;
+        $float_array[$p++] = $pos[0];
+        $float_array[$p++] = $pos[1];
+        $float_array[$p++] = $pos[2];
+    }
+    return $float_array;
+}
+
+// UI TOOLS
+// ortho plane
+global proc int UI_basis_chooser(string $msg){
+    $xbt = "Cancel";
+    int $ind = -1;
+    string $user_inp = `confirmDialog 
+        -m $msg
+        -b "X" -b "Y" -b "Z" 
+        -b $xbt -db $xbt -cb $xbt -ds $xbt
+        `;
+    if ($user_inp != $xbt)
+        switch ($user_inp){
+            case "X":
+                $ind = 0;
+                break;
+            case "Y":
+                $ind = 1;
+                break;
+            case "Z":
+                $ind = 2;
+                break;
+            default:
+                break;
+        }
+    return $ind;
+}
+// if (!size($pts))
+//         $pts = `ls -fl -os -type float3`;
+//     if (!size($pts)){
+//         $pts = `ls -sl -tr`;
+//         if (!size($pts)){
+//             print {"! Not enough data"};
+//             return $point_with_vec;
+//         }
+//     }
+//     else
+//         $float_array = `xform -q -ws -t $pts`;

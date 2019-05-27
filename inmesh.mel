@@ -1,0 +1,242 @@
+//v0.1d upd inmesh() ask for instancing
+//v0.1c upd inmesh() works with packs
+//v0.1b fix lr full path
+//v0.1a upd doInMesh: return trg if src is not ncurve nor mesh
+
+global proc int rstcomps(){
+    // select tranforms or shapes
+    string $lssl[] = `ls -sl -s`;
+    $lssl = stringArrayCatenate($lssl, `listRelatives -s -f`);
+    int $cntr;
+    for ($shp in $lssl){
+        $res = catchQuiet(doResetComps($shp));
+        if (!$res)
+            $cntr++;
+    }
+    return $cntr;
+}
+
+global proc int doResetComps(string $shp){
+
+    $shp_typ = `objectType $shp`;
+    $comp_typ = "cv";
+    if ($shp_typ != "nurbsCurve")
+        if ($shp_typ == "mesh")
+            $comp_typ = "vtx";
+        else
+            return 1;
+
+    $comps = ls("-fl", `format -s $shp -s $comp_typ "^1s.^2s[*]"`);
+    for ($comp in $comps)
+        setAttr $comp 0 0 0;
+
+    return 0;
+}
+
+global proc inmesh(){
+    // select srource and targets
+    // u can select netiher traonsforms with shapes
+    //   or shapes itself
+    $lssl = `ls -sl`;
+    $src = $lssl[0];
+    stringArrayRemoveAtIndex(0, $lssl);
+    $src_shps = `listRelatives -f -s -ni $src`;
+    $okbtn = "Yes";
+    $nobtn = "No";
+    $cbtn = "Cancel";
+    $inst_user_inp = `confirmDialog 
+        -t "In Mesh" -m "Make Instance?"
+        -b $okbtn -b $nobtn -b $cbtn
+        -cb $cbtn -db $cbtn`;
+    if ($inst_user_inp == $cbtn)
+        return;
+    int $break = $inst_user_inp == $nobtn;
+    if (!size($src_shps))
+        $src_shps = `ls -s $src`;
+    for ($trg in $lssl){
+        $trg_shps = `listRelatives -f -s -ni $trg`;
+        if (!size($trg_shps))
+            $trg_shps = `ls -s $trg`;
+        $src_sz = size($src_shps);
+        $stop = size($trg_shps);
+        if (size($src_shps) < $stop)
+            $stop = $src_sz;
+        for ($i=0; $i<$stop; $i++){
+            $src = getInitShape($src_shps[$i]);
+            $trg = getInitShape($trg_shps[$i]);
+            doInMesh($src, $trg, $break);
+        }
+    }
+}
+
+global proc string doInMesh(string $src, 
+                            string $trg, 
+                            int    $break){
+
+    // break(int)       to delete connection between shapes
+    
+    string $cmd;
+    $lssl = `ls $src $trg`;
+    
+    if (!size($lssl))
+        $lssl = `ls -sl`;
+    
+    if (size($lssl) != 2)
+        return $cmd;
+
+    $src = getInitShape($lssl[0]);
+    $trg = getInitShape($lssl[1]);
+    if (`objectType $src` != `objectType $trg`)
+        return "";
+    $out = "o";
+    $in = "i";
+    $comp_typ = "";
+    $shp_typ = `objectType $src`;
+    if ($shp_typ == "nurbsCurve"){
+
+        print "\n  type: <nurbsCurve>\n";
+        $in = "cr";
+        $out = "ws";
+        $comp_typ = "cv";
+    }
+    else{
+        if ($shp_typ == "mesh"){
+            print "\n  type: <mesh>\n";
+            $in = "i";
+            $out = "o";
+            $comp_typ = "vtx";
+        }
+        else{
+            print `format
+                -s $shp_typ
+                "Currently that shape[^1s] type is not handling\n"`;
+            return $trg;
+        }
+    }
+    
+    // reset orig
+    $comps = ls("-fl", `format -s $trg -s $comp_typ "^1s.^2s[*]"`);
+    for ($comp in $comps)
+        setAttr $comp 0 0 0;
+    // check origs
+    // $ls_io = `ls -dag -s -io $src`;
+    // for ($orig in $ls_io){
+
+    //     if (size(`listConnections ($orig + ".w")`)){
+    //         $src = $orig;
+    //         break;
+    //     }
+    // }
+    // $ls_io = `ls -dag -s -io $trg`;
+    // for ($orig in $ls_io){
+
+    //     if (size(`listConnections ($orig + ".w")`)){
+    //         $trg = $orig;
+    //         break;
+    //     }
+    // }
+    print `format -s $src
+                  -s $trg
+                  "\n  src: ^1s\n  trg: ^2s\n"`;
+
+    $con_cmd = `format 
+            -s $src 
+            -s $trg
+            -s $out
+            -s $in
+            "connectAttr -f ^1s.^3s ^2s.^4s;"`;
+    print ("|| " + $con_cmd + "\n");
+    $brk_cmd = `format 
+            -s $src 
+            -s $trg
+            -s $out
+            -s $in
+            "disconnectAttr ^1s.^3s ^2s.^4s;"`;
+    $con_cmd += `format -s $con_cmd "print \">> ^1s\\n\""`;
+    evalDeferred("-en", $con_cmd);
+    string $last_cmd = $con_cmd;
+
+    // break connection
+    if ($break){
+        print ("|| " + $brk_cmd + "\n");
+        $brk_cmd += `format -s $brk_cmd "print \">> ^1s\\n\"\n"`;
+        evalDeferred("-low", $brk_cmd);
+        $last_cmd = $brk_cmd;
+    }
+    // print `evalDeferred -ls`;
+    return $last_cmd;
+}
+
+global proc inmeshpair(){
+    print "WIP\n";
+}
+// $shp = $src_shps[0]
+//getInitShape $shp
+global proc string getInitShape(string $sel){
+
+    string $shp = $sel;
+    string $shp_typ;
+    if (`objectType -i "transform" $sel`){
+        $ls_shps = `listRelatives -f -s -ni $sel`;
+        if (!size($ls_shps))
+            return "";
+        $shp = $ls_shps[0];
+    }
+    $shp_typ = `objectType $shp`;
+    string $at_in = getDataPlg($shp, 0);
+    string $at_out = getDataPlg($shp, 1);
+    
+    string $init = $shp;
+    $ls_orig = ls("-type", $shp_typ, "-io", `listHistory ($shp + $at_in)`);
+    if (size($ls_orig)){
+        // double check xD i know its overprotection
+        // TODO make recurse to first init shape while shape has inputs.cr
+        $ls_out = `listConnections -s 0 -d 1 ($ls_orig[0] + $at_out)`;
+        if(size($ls_out))
+            $init = $ls_orig[0];
+    }
+
+    return $init;
+}
+
+global proc dupmesh(){
+
+    string $sel;
+
+    $lssl = `ls -sl`;
+
+    for ($sel in $lssl){
+    
+        doDuplicateMesh($sel);
+    }
+}
+
+global proc doDuplicateMesh(string $mesh){
+
+        $bn = `match "[^|]+$" $mesh`;
+        $sph = `polySphere -n ("__dup__" + $bn) -ch 0`;
+        doInMesh ($mesh, $sph[0], 1);
+
+}
+
+global proc string getDataPlg(string $sel, int $dir){
+    // dir - 0 - inp
+    //       1 - out
+    // returns outplg
+    string $shp_typ = `objectType $sel`;
+    string $at_in, $at_out;
+    switch($shp_typ){
+        case "nurbsCurve":
+            $at_in = ".cr";
+            $at_out = ".ws";
+            break;
+        default:
+            $at_in = ".i";
+            $at_out = ".w";
+            break;
+    }
+    string $res = $at_in;
+    if ($dir)
+        $res = $at_out;
+    return $res;
+}

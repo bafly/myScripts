@@ -1,0 +1,7 @@
+global proc string[] substituteStringArray(string $find, string $lssl[], string $rep){
+    string $newls[];
+    int $n;
+    for ($sel in $lssl)
+        $newls[$n++] = `substitute $find $sel $rep`;
+    return $newls;
+}

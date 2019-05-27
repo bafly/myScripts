@@ -1,0 +1,41 @@
+global proc string[] repsel(string $fnd, string $rep){
+    string $lssl[] = `ls -sl`;
+    string $items[];
+    int $i;
+    for ($sel in $lssl){
+        $res = `substitute $fnd $sel $rep`;
+        $items[$i++] = $res;
+    }
+    select $items;
+    return $items;
+}
+
+global proc string[] doRepSel(
+        string $lssl[], string $fnd, string $rep, int $listmod){
+    // args:
+    //  - listmod - if -1 reverse pairs: b(found), a(initial), ...
+    //                  0 returns only found results
+    //                  1 returns pairs: a(init), b(found)
+    // returns pairs of found items(a:initial, b:found) a, b, a, b, etc
+    string $res;
+    string $pairs[];
+    string $NEG = -1;
+    int $p;
+    for ($sel in $lssl){
+        $res = `substitute $fnd $sel $rep`;
+        if (`objExists $res`){
+            $a = $p++;
+            if ($listmod){
+                $pairs[$a] = $sel;
+                $pairs[$p++] = $res;
+            }
+            else{
+                if ($listmod < 0)
+                    $pairs[$p++] = $sel;
+                if ($listmod <= 0)
+                    $pairs[$a] = $res;
+            }
+        }
+    }
+    return $pairs;
+}

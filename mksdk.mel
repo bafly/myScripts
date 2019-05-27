@@ -1,0 +1,93 @@
+//v0.0
+
+global proc mksdk(int $XANIM){
+    // Creates setDrivenKeyframe based on existing animation
+    // Args: - XANIM, int, remove animation before 
+    //                to avoid blendWeighted nodes creation
+    // Usage:
+    //  select driven objects and last should be a driver
+    //  if driver has multiple keyframed channels select one
+    //  from channelBox.
+    
+    // get data from selection
+    $lssl = `ls -sl`;
+    $ls_sz = size($lssl);
+    $dr = $lssl[$ls_sz-1];
+    $dr_cb_attrs = `channelBox -q -sma mainChannelBox`;
+    stringArrayRemoveAtIndex($ls_sz-1, $lssl);
+
+    // dvr: find driver attributes
+    string $dr_plg;
+    $dr_acs = `findKeyframe -c $dr`;
+    if (size($dr_acs) > 1){
+        if (!size($dr_attrs)) || size($dr_attrs) > 1){
+            print {" <i>  More than one channel selected, select only one"};
+            return;
+        }
+        $dr_plg = $dr + "." + $dr_attrs[0];
+    }
+    else{
+        $ls_plg = `listConnections -s 0 -d 1 -p 1 $dr_acs[0]`;
+        $dr_plg = $ls_plg[0];
+    }
+    string $cmd_pool[];
+    string $dns_acs[];  // found drivens' animCurves
+    int $p, $a;
+    for ($drvn in $lssl){
+        $drvn_acs = `findKeyframe -c $drvn`;
+        for ($dn_ac in $drvn_acs){
+            print {" SDK on: " + $drvn};
+            $dn_plg = `listConnections -s 0 -d 1 -p 1 $dn_ac`;
+            $dn_keys = `keyframe -q $dn_plg[0]`;
+            $dn_k_sz = size($dn_keys);
+            // iterate over driven keyframes
+            for ($i=0; $i<$dn_k_sz; $i++){
+                $tm = $dn_keys[$i];
+                float $dr_vs[] = `keyframe -t $tm -q -ev -vc $dr_plg`;
+                float $dn_vs[] = `keyframe -t $tm -q -vc $dn_plg[0]`;
+                $cmd = `format 
+                    -s $dr_plg -s $dr_vs[0]    // driver's.plug and its value
+                    -s $dn_vs[0] -s $dn_plg[0]      // driven_value and driven's.plug
+                    "setDrivenKeyframe -cd \"^1s\" -dv ^2s -v ^3s \"^4s\""`;
+                $cmd_pool[$p++] = $cmd;
+            }
+            $dns_acs[$a++] = $dn_ac;
+        }
+    }
+    // delete animation before evaluate
+    if ($XANIM)
+        if (size($dns_acs))
+            cutKey -cl $dns_acs;
+
+    // create sdk based on existed animation
+    for ($cmd in $cmd_pool)
+        evalEcho($cmd);
+}
+
+global proc string[] buildSDKCMD(string $dr_plg, string $drvns[]){
+    string $evalCMDs[];
+    string $dns_acs[];  // found drivens' animCurves
+    int $p, $a;
+    for ($drvn in $drvns){
+        $drvn_acs = `findKeyframe -c $drvn`;
+        for ($dn_ac in $drvn_acs){
+            print {" SDK on: " + $drvn};
+            $dn_plg = `listConnections -s 0 -d 1 -p 1 $dn_ac`;
+            $dn_keys = `keyframe -q $dn_plg[0]`;
+            $dn_k_sz = size($dn_keys);
+            // iterate over driven keyframes
+            for ($i=0; $i<$dn_k_sz; $i++){
+                $tm = $dn_keys[$i];
+                float $dr_vs[] = `keyframe -t $tm -q -ev -vc $dr_plg`;
+                float $dn_vs[] = `keyframe -t $tm -q -vc $dn_plg[0]`;
+                $cmd = `format 
+                    -s $dr_plg -s $dr_vs[0]    // driver's.plug and its value
+                    -s $dn_vs[0] -s $dn_plg[0]      // driven_value and driven's.plug
+                    "setDrivenKeyframe -cd \"^1s\" -dv ^2s -v ^3s \"^4s\""`;
+                $evalCMDs[$p++] = $cmd;
+            }
+            $dns_acs[$a++] = $dn_ac;
+        }
+    }
+    return $evalCMDs;
+}

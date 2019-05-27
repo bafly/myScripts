@@ -1,0 +1,411 @@
+// 09/10/2017
+//   @new:  UIautorenDoRename(), doSlitName()
+//          Now splitting by delimeter("_")
+//   @fix:  UIautorenSet(), getUnreservedEnums(), splitName()
+//          Now if iterated name exists but its in a
+//          precessing list it will be rearranged according to
+//            selected oreder:
+//            old: (env1, env3, env4) >> (env2, env5, env6)
+//            new: (env1, env3, env4) >> (env1, env2, env3)
+//          It will rename even if that name exists both in
+//            and outside the selection list
+
+global proc autoren(){
+    UIautrenShowUI();
+}
+
+//////// utils: newname ////////
+//  renames and saves previous names of selected objects
+//  if # (hash) is used in input it will be replaced with iterating int
+
+global proc newname(){
+
+    string $sel, $newname, $oldname, $userinp;
+
+    $lssl = `ls -sl`;
+    int $autoren = false;
+    for ($sel in $lssl){
+        $bname = `match "[^|]+$" $sel`;
+        string $txt = $sel;
+        if (`attributeExists oldName $sel`){
+            $oldname = `getAttr ($sel + ".oldName")`;
+            $txt = $oldname;
+        }
+        // userinput or autorename
+        if (!$autoren){
+            $res = `promptDialog -t "Rename" -m "Mew Name" -tx $txt`;
+            if ($res == "dismiss")
+                continue;
+            $userinp = `promptDialog -q -tx`;
+            if (`gmatch $userinp "*#*"`)
+                $autoren++;
+        }
+        $newname = substitute("#", $userinp, string($autoren++));
+        if ($newname == $oldname)
+            $newname = "";
+        print(`format -s $newname -s $oldname " > new:^1s, old:^2s\n"`);
+        doRename $sel $newname 1;
+    }
+}
+// unrename 0
+global proc unrename(int $tgl){
+
+    string $sel;
+
+    $lssl = `ls -sl`;
+
+    for ($sel in $lssl)
+        doRename $sel "" $tgl;
+
+}
+
+global proc string doRename(string $sel, string $newname, int $tgl){
+
+    // if $newname is empty, reverting to old name
+
+    int $isRenamed = 1;
+    if (`attributeExists "isRenamed" $sel`)
+        $isRenamed = `getAttr ($sel + ".isRenamed")`;
+    // if $newname is ""(empty) unrename will be performed
+    // $tgl will work only if newname is empty
+    if ($newname == ""){
+        if (!`attributeExists oldName $sel`){
+            print "  <!>  Previouse name not found\n";
+            return "";
+        }
+        $newname = `getAttr ($sel + ".oldName")`;
+        if ($newname == "" || `match "^[0-9]" $newname` != "")
+            return "";
+
+        // if object's name status isRenamed is 0 - object has legacy name
+        // so no need to undo renaming, .oldName is storing reverted new name
+        if (!$isRenamed)
+            if (!$tgl)
+                return "";
+
+    }
+    if (`attributeExists "oldName" $sel`)
+        if ($newname == `getAttr ($sel + ".oldName")`)
+            $isRenamed = !$isRenamed;
+    $bname = `match "[^|]+$" $sel`;
+    string $renamed = `rename $sel $newname`;
+    if ($renamed != ""){
+        if (!`attributeExists "oldName" $renamed`)
+            addAttr -dt "string" -ln oldName $renamed;
+        if (!`attributeExists "isRenamed" $renamed`)
+            addAttr -at "bool" -ln isRenamed $renamed;
+        setAttr -type "string" ($renamed + ".oldName") $bname;
+        setAttr ($renamed + ".isRenamed") $isRenamed;
+    }
+    return $renamed;
+}
+
+global proc unrenall(string $lssl[]){
+
+    string $renamed;
+    string $items[];
+    int $i;
+    if (!size($lssl))
+        $lssl = `ls -o`;
+    for ($sel in $lssl)
+        if (!`attributeExists "oldName" $sel`)
+            continue;
+        $renamed = `doRename $sel "" 0`;
+        if ($renamed != "")
+            $items[$i++] = $renamed;
+}
+
+global proc saveCurrentName(string $lssl[]){
+    int $i;
+    if (!size($lssl))
+        $lssl = `ls -sl`;
+        // $lssl = listRelatives("-f", "-p", `listRelatives -f -ad -c -s $root`);
+    for ($sel in $lssl)
+        setCurrentName($sel);
+}
+
+global proc setCurrentName(string $sel){
+    $bname = `match "[^|]+$" $sel`;
+    if (!`attributeExists "oldName" $sel`)
+        addAttr -dt "string" -ln oldName $sel;
+    setAttr -type "string" ($sel + ".oldName") $bname;
+    if (!`attributeExists "isRenamed" $sel`)
+        addAttr -at "bool" -ln isRenamed $sel;
+    setAttr ($sel + ".isRenamed") 0;
+}
+
+/////// main ///////////
+
+global proc string UIautrenShowUI(){
+    
+    // main - opens floating interactive window 
+    //  allowing rename nodes on the go
+    
+    $win = `window 
+        -tlb 1 -rtf 1 -wh 200 10
+        -nde 1 -t "re_#ame"`;
+    $main = `rowColumnLayout -nr 1`;
+    UIautorenSet($main);
+    showWindow $win;
+
+    $eval_cmd_set = format(
+        "-s", "UIautorenSet",
+        "-s", $main,
+        "^1s \"^2s\""
+        );
+
+    scriptJob -e "SelectionChanged" $eval_cmd_set  -p $win;
+    scriptJob -e "NameChanged" $eval_cmd_set  -p $win;
+    return $main;
+}
+
+// $layout = $main
+global proc string[] UIautorenSet(string $layout){
+    
+    // Creates fileds for each name parts
+    // input: layout for textFeilds for each name parts
+    // output: retrns textFields(UIControls)
+    
+    // flush current items
+    string $childs[] = `rowColumnLayout -q -ca $layout`;
+    if (size($childs))
+        deleteUI $childs;
+    
+    // get new values
+    $vals = splitName();
+    string $res[];
+    int $r;
+    for ($part in $vals){
+        if ($part == "")
+            continue;
+        $tf = `textField -tx $part
+                         -p $layout`;
+        /*
+        $eval_cmd = `format 
+            -s $tf
+            "UIautorenDoRename \"^1s\""`;
+        */
+        $eval_cmd = `format 
+            -s $layout
+            -s $r
+            "UIautorenDoRename \"^1s\" \"^2s\""`;
+
+        textField -e -ec $eval_cmd $tf;
+        $res[$r++] = $tf;
+    }
+    return $res;
+}
+
+global proc string[] UIautorenDoRename(
+        string $layout, 
+        int $idx){
+
+    // [Runs on enter command]
+    // Renames (!) selected objects (use hash to increment item's count)
+    // If head is starts with numbers it will be replaced
+    //   with _(underscore)
+
+    // input: layout with textFields for each nameparts
+    // output: renamed items
+
+    string $vals[] = UIautorenGet($layout);
+    // fix name if starts with number
+    $vals[0] = `substitute "^[0-9]+" $vals[0] "_"`;
+    // get current editing name's part
+    string $newpart = $vals[$idx];
+
+    // reserve iteration indices
+    string $res[];
+    string $lssl[] = `ls -l -sl`;
+    string $patname = stringArrayToString($vals, "_");
+    int $enums[] = getUnreservedEnums($patname, $lssl);
+    for ($s=size($lssl)-1; $s>=0; $s--){
+        $sel = $lssl[$s];
+        $spl = doSlitName($sel, "_");
+        $spl[$idx] = $newpart;
+        $newname = stringArrayToString($spl, "_");
+
+        int $e = $enums[$s];
+        string $enum = $e;
+        $newname = `substitute "#" $newname $enum`;
+        $res[$s] = `doRename $sel $newname 1`;
+    }
+    return $res;
+}
+global proc string[] UIautorenDoRename_(string $layout){
+    
+    // [Runs on enter command]
+    // Renames selected object or (!) its heirarchy if (!) hash is used
+    // If head is starts with numbers it will be replaced
+    //   with _(underscore)
+
+    // input: layout with textFields for each nameparts
+    // output: renamed items
+    string $vals[] = UIautorenGet($layout);
+    $vals[0] = `substitute "^[0-9]+" $vals[0] "_"`;
+    string $lssl[] = `ls -l -sl`;
+    if (stringArrayContains("#", $vals))
+        if (size($lssl) == 1)
+            $lssl = `ls -sl -dag -tr`;
+    print {"$lssl"};
+    print $lssl;
+
+    string $res[];
+    string $patname = stringArrayToString($vals, "");
+    int $enums[] = getUnreservedEnums($patname, $lssl);
+    string $e;
+    // reverse loop
+    for ($s=size($lssl)-1; $s>=0; $s--){
+        $sel = $lssl[$s];
+        $e = $enums[$s];
+        string $enum = $e;
+        $newname = `substitute "#" $patname $enum`;
+        $res[$s] = `doRename $sel $newname 1`;
+    }
+        
+    return $res;
+}
+
+proc int getNextEnum(string $patname){
+    
+    // input: using string, with hash(e.g wat#wat#);
+    // output: returns int, next free enum
+    
+    int $w = 1;
+    string $enum = $w;
+    if (!`gmatch $patname "*#*"`){
+        // if ther're numbers
+        $patname = `substitute "[0-9]+" $patname "#"`;
+        // if theren't
+        if (!`gmatch $patname "*#*"`)
+            $patname += "#";
+    }
+
+    $newname = `substitute "#" $patname $enum`;
+    while (`objExists $newname`){
+        if ($w > 1000000)
+            break;
+        string $enum = $w;
+        $newname = `substitute "#" $patname $enum`;
+        $w++;
+    }
+    return $w;
+}
+
+global proc int[] getUnreservedEnums(string $patname, string $lssl[]){
+    
+    string $e;
+    int $range = size($lssl);
+    int $enums[];
+    for ($i=1, $u=0; $u<$range; $i++){
+        if ($i>100000)
+            break;
+        $e = $i;
+        $newname = `substitute "#" $patname $e`;
+        int $count = 1;
+        if (`objExists $newname`){
+            $count = 0;
+            for ($sel in $lssl){
+                $bname = `match "[^|]+$" $sel`;
+                if ($bname == $newname)
+                    $count = 1;
+            }
+        }
+        if ($count)
+            $enums[$u++] = $i;
+    }
+    // print {"$enums: "};
+    // print $enums;
+    return $enums;
+}
+
+global proc string[] splitName(){
+    
+    string $spl[];
+
+    string $lssl[] = `ls -sl`;
+    if (!size($lssl))
+        return {};
+    $ob = $lssl[0];
+    
+    // $spl = splitNameHash($lssl);
+    $spl = splitNameDelim($ob, "_");
+    return $spl;
+}
+
+global proc string[] doSlitName(string $sel, string $delim){
+
+    string $spl[] = splitNameDelim($sel, $delim);
+    return $spl;
+}
+
+global proc string[] splitNameDelim(string $ob, string $delim){
+    // works with one selection
+    // splits by defined symbol
+    $baseName = `match "[^|]+$" $ob`;
+    return stringToStringArray($baseName , $delim);
+}
+global proc string[] splitNameHash(string $lssl[]){
+    
+    // input: none, using first selection's name
+    // output: items - head, first num, tail (eg wat_, 3, _hop)
+    
+
+    $ob = $lssl[0];
+    $baseName = `match "[^|]+$" $ob`;
+    string $head = `match "[^0-9]+" $baseName`; // check for iterations
+    string $tail = `substitute $head $baseName ""`;
+    string $hash = `match "[0-9]+" $tail`;
+    $tail = `substitute $hash $tail ""`;
+    
+    // if enumeration not found use hash
+    $lshi = `listRelatives -c -type transform $ob`;
+    // if (size($lshi)) $autoren = askUser();
+    if (size($lssl) > 1)
+        $hash = "#";
+    return {$head, $hash, $tail};
+}
+
+proc int askUser(){
+    
+    // returns true/false,
+    //      if user wants or not to rename hierarchy too
+    
+    int $autoren = 0;
+    string $ask = `confirmDialog 
+        -m "Ignore hierarchy?"
+        -b "Yes"
+        -b "No"
+        -b "Cancel"
+        -db "No"
+        -cb "Cancel"`;
+    
+    switch ($ask){
+        case "Yes":
+            $autoren = 0;
+            break;
+        case "No":
+            $autoren = 1;
+            break;
+        default:
+            break;
+    }
+    return $autoren;
+}
+
+global proc string[] UIautorenGet(string $layout){
+    
+    // input: layout with textFeild UI controls
+    //  For each name parts: head, hash, tail (eg. wat_, 1, "")
+    // output: returns text values form ui fields,
+    
+    string $tfs[] = `rowColumnLayout -q -ca $layout`;
+    string $res[];
+    int $r;
+    for($tf in $tfs){
+        if (`textField -ex $tf`)
+            $res[$r++] = `textField -q -tx $tf`;
+    }
+    // print $res;
+    return $res;
+}

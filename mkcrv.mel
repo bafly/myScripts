@@ -1,0 +1,43 @@
+//v0.1a - upd - ask user for crv degree
+
+global proc mkcrv(){
+    
+    $_usr_btn = `promptDialog
+        -m "Curve degree"
+        -tx "1"
+        -b "OK" -b "Cancel"
+        -cb "Cancel"`;
+    if ($_usr_btn == "Cancel")
+        return;
+    int $_usr_inp = `promptDialog -q -tx`;
+    int $crv_deg = !$_usr_inp ? 3 : $_usr_inp;
+    
+    string $lssl[] = `ls -sl -tr`;
+    vector $pts[] = getPosFromSel($lssl);
+    vector $pos;
+    string $pnt_typ = "ep";
+    string $pts_str;
+    for ($pos in $pts){
+        $pts_str += format(
+            "-s", $pnt_typ,
+            "-s", ($pos.x), "-s", ($pos.y), "-s", ($pos.z),
+            " -^1s ^2s ^3s ^4s");
+    }
+    print {$pts_str};
+    string $cmd = `format -s $crv_deg -s $pts_str "curve -d ^1s ^2s"`;
+    print {$cmd};
+    eval($cmd);
+}
+
+global proc vector[] getPosFromSel(string $lssl[]){
+    
+    vector $pts[];
+    vector $pos;
+    for ($i=0; $i<size($lssl); $i++){
+        $sel = $lssl[$i];
+        $pos = `xform -q -ws -t $sel`;
+        $pts[$i] = $pos;
+    }
+    print $pts;
+    return $pts;
+}

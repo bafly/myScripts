@@ -1,0 +1,10 @@
+//pairsnap
+
+global proc pairsnap(int $srtMode, int $pcp){
+    $lssl = `ls -sl`;
+    $sz = size($lssl);
+
+    for ($i=0; $i<$sz; $i+=2)
+        doSnap $lssl[$i] $lssl[$i+1] $srtMode $pcp;
+    
+}

@@ -1,0 +1,220 @@
+//v0.1b -new-   cpshadingset()
+//v0.1a -new-   doCopySetComps() copy shading sets
+//v0.1
+
+global proc int cpsetcomps(){
+    // finds sets with components of first selected shape
+    //  and adding same components of second shape
+    //  to corresponding sets
+    
+    int $CHK;
+    string $lssl[] = `ls -l -sl -s`;
+    $lssl = stringArrayCatenate(`listRelatives -f -s`, $lssl);
+    int $sz = size($lssl);
+    if ($sz%2){
+        print "\ncpsetcomps: Selected items not even(they are odd)\n";
+        return 1;
+    }
+    for ($i=0; $i<$sz; $i++){
+        $src = $lssl[$i++];
+        $trg = $lssl[$i];
+        print {$src, $trg};
+        sets -fe "initialShadingGroup" $trg;
+        $CHK = catchQuiet(doCopySetComps($src, $trg));
+    }
+    return $CHK;
+}
+
+global proc int cpsets(){
+    int $res;
+    $lssl = `ls -sl -s`;
+    $lssl = stringArrayCatenate($lssl, `listRelatives -f -s -ni`);
+    for ($i=0; $i<size($lssl); $i++){
+        $CHK = catchQuiet(doCopySetComps($lssl[$i++], $lssl[$i]));
+        if (!$CHK)
+            $res++;
+    }
+    return $res;
+}
+
+global proc string[] doCopySetComps(string $src, string $trg){
+    // Finds all objSets from source and recreates it 
+    //      with same existing target members
+    // Returns recreated shadingGroups
+
+    // $src = "arm_L_shoulderDiskALamps_003_prxShape";
+    // $trg = "arm_R_shoulderDiskALamps_003_prxShape";
+    print {"src: " + $src};
+    print {"trg: " + $trg};
+    string $sets[] = `listSets -o $src`;
+    string $items[];    // shadingGroups
+    int $i;
+    for ($set in $sets){
+        // $set = $sets[0];
+        $comps = getObjCompsFromSet($src, $set);
+        $swapped = ls(doSwapComps($comps, $trg));
+        $mat_data = mkAndApplyMat($swapped, "lambert", "colorFill_", "");
+        $items[$i++] = $mat_data[1];
+    }
+    return $items;
+}
+
+global proc string[] getObjCompsFromSet(string $shp, string $set){
+    // args: $shp - full path to shape
+    //       $set - objectSets name
+    // return, string[] - components from set
+    //      if its shape name is equal with
+    //      given shape ($shp)
+    string $item;
+    string $items[];
+    int $i;
+    for ($memb in `sets -q $set`){        
+        $ls_obj = `ls -l -o $memb`;
+        if ($ls_obj[0] == $shp)
+            // print $memb;
+            $items[$i++] = $memb;
+    }
+    return $items;
+}
+
+global proc string[] swapsetcomps() {
+    
+    string $items[];
+
+    $lssl  = `ls -fl -sl`;
+    $comps = $lssl;
+    $trg = $lssl[size($lssl)-1];
+    stringArrayRemoveAtIndex(size($lssl)-1, $comps);
+    $items = doSwapSetComps($comps, $trg);
+    
+    select $items;
+    return $items;
+
+}
+    
+global proc string[] doSwapSetComps( string $comps[], string $trg ){
+
+    int $c;
+    string $comp;
+    string $items[];
+       
+    for ($comp in $comps){
+        $tail = `match ".[^.]+$" $comp`;
+        $newcomp = $trg + $tail;
+        $items[$c++] = $newcomp;
+    }   
+
+    return $items;
+
+}
+
+// make and aplly mat //
+global proc string[] mkAndApplyMat(
+        string $comps[], string $type,
+        string $pfx, string $sfx){
+    
+    // Returns created material ans shadingGroup
+    string $mat;
+    string $sg;
+
+    if ($type == "")
+        $type = "lambert";
+    
+    $mat_n = $pfx + $type + $sfx;
+    $mat = `shadingNode -asShader $type -n $mat_n`;
+    $sg = `sets -empty 
+                -renderable true -noSurfaceShader true 
+                -name ($mat + "SG")`;
+    defaultNavigation -connectToExisting 
+                      -source $mat
+                      -destination $sg;
+    sets -e -fe $sg $comps;
+    return {$mat, $sg};
+}
+
+
+global proc string[] copySGFromNS(string $ns){
+    // Returns shadingGroups
+    $ls_sg = `ls -type shadingEngine ($ns + ":*")`;
+    string $items[];
+    int $i;
+    for ($sg in $ls_sg){
+        //$sg = $ls_sg[0]
+        $comps = `sets -q $sg`;
+        $stripns = ls(`stringArraySubstitute ($ns) $comps ""`);
+        $mat_data = mkAndApplyMat($stripns, "lambert", "colorFill_", "");
+        $items[$i++] = $mat_data[1];
+    }
+    return $items;
+}
+
+///////////////// copy shading network from napespace /////////////////
+
+global proc string[] cpshadingset(){
+    $ls_sg = `ls -type shadingEngine "*:*"`;
+    string $items[];
+    int $i;
+    for ($sg in $ls_sg){
+        $sg = $ls_sg[$i];
+        print {"  Creating new SG from: " + $sg};
+        $new_sg = doCopyShadingGroup($sg);
+        $items[$i++] = $new_sg;
+        print {"  NEW SG: " + $new_sg};
+    }
+        
+    return $items;
+}
+
+global proc string doCopyShadingGroup(string $sg){
+    //$sg = $ls_sg[0]
+    $xns_sg = doStripNS($sg);
+    print {" Find SG: " + $sg};
+    if (`objExists $xns_sg`)
+        return "";
+    $mat_typ = "lambert";
+    $mat_n = $mat_typ + "#";
+    string $ls_mat[] = `listConnections -s 1 -d 0 ($sg + ".ss")`;
+    if (size($ls_mat)){
+        $mat_typ = `objectType $ls_mat[0]`;
+        $mat_n = doStripNS($ls_mat[0]);
+        $mat_n = $mat_n == "" ? "colorFill_#" : $mat_n;
+    }
+    $sg_items = `sets -q $sg`;
+    print $sg_items;
+    $scn_items = ls(xns($sg_items));
+    if (!size($scn_items))
+        print "  i Copy of source SG will be created empty\n";
+    print {"  Mat type: " + $mat_typ};
+    print {"  Mat name: " + $ls_mat[0]};
+    $mat = `shadingNode -asShader $mat_typ -n $mat_n`;
+    $new_sg = `sets -renderable true
+                    -noSurfaceShader true 
+                    -empty
+                    -name $xns_sg`;
+    print {"  Mat:" + $mat};
+    print {"  SG:" + $new_sg};
+    defaultNavigation -connectToExisting
+                      -source $mat
+                      -destination $new_sg;
+    // copy values
+    if (size($ls_mat))
+        copyAttr -v $ls_mat[0] $mat;
+    if (size($scn_items))
+        sets -e -fe $new_sg $scn_items;
+    return $new_sg;
+}
+
+global proc string doStripNS(string $sel){
+    string $shn = `match "[^|]+$" $sel`;
+    string $bn = `match "^.[^.]+" $shn`;
+    string $xns = `substitute "^.[^:]+" $bn ""`;
+    return $xns;
+}
+
+global proc string[] xns(string $lssl[]){
+    string $items[];
+    int $i;
+    for ($sel in $lssl)
+        $items[$i++] = doStripNS($sel);
+    return $items;
+}

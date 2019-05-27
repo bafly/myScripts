@@ -1,0 +1,11 @@
+global proc int xedits(string $ec){
+    int $r;
+    $lssl = `ls -sl`;
+    for ($sel in $lssl){
+        if (!`referenceQuery -inr $sel`)
+            continue;
+        referenceEdit -r -scs 1 -fld 1 -ec $ec $sel;
+        $r++;
+    }
+    return $r;
+}

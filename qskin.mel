@@ -1,0 +1,41 @@
+global proc string[] qskin(){
+    
+    string $j;
+    string $bind;
+    
+    string $lssl[] = `ls -sl`;
+    $items = $lssl;
+    if (size(`ls -hl`) || size(`filterExpand -sm 34 -sm 31 -sm 32 -sm 35`)){
+        $cls = `cluster`;
+        $ls_set = `listConnections ($cls[0]+".msg")`;
+        $items = `sets -q $ls_set[0]`;
+        $j = `jnt`;
+        delete;
+      
+        $geo = plugNode($lssl[0]);
+        $bind = findRelatedSkinCluster($geo);
+        if ($bind == "")
+            $bind = `skinCluster $j $items`;
+        else{
+            skinCluster -e -ai $j -lw 1 -wt 0 $bind;
+            //setAttr ($j + ".liw") 1;
+            $sset = `listConnections ($bind + ".msg")`;
+            sets -fe $sset $items;
+            setAttr ($j + ".liw") 0;
+            skinPercent -tv $j 1.0 $bind $items;
+        }
+    }
+    else{
+        $j = `jnt`;
+        $grp = `group -em -n ("constraint_"+$lssl[0])`;
+        $p = `parentConstraint $grp $lssl[0]`;
+        $bind = $p[0];
+        parent $bind $grp;
+        for ($sel in stringArrayRemove({$lssl[0]}, $items)){
+            copyAttr -ksc -ic $lssl[0] $sel;
+        }
+        
+    }
+    
+    return {$bind, $j};
+}

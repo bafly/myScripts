@@ -1,0 +1,33 @@
+// select two objs
+global proc string[] cpshadingsets(){
+	string $lssl[] = `ls -sl`;
+	string $tmpls[] = ls("-type","shadingEngine", `listHistory  -f 1 $lssl[0]`);
+	string $sg[] = stringArrayRemove ({"initialShadingGroup"}, $tmpls);
+	for ($set in $sg){
+		$tmpls = `selbySG $set $lssl[0] $lssl[1]`;
+		if (size($tmpls))
+			sets -e -fe $set $tmpls; // -fe very importanto!
+	}
+	return $sg;
+}
+//rdy to tearoff
+global proc string[] selbySG(string $se, string $sobj, string $tobj){
+	if (!`objectType -i shadingEngine $se`)
+		return {};
+	$lsse = `sets -q $se`;
+	if ($sobj!=""){
+		string $newls[];
+		int $h=0;
+		string $ho;
+		for ($ho in $lsse)
+			if (gmatch((string)$ho,($sobj+"*")))
+				$newls[$h++]=$ho;
+		if ($tobj!=""){
+			$h=0;
+			for ($ho in $newls)
+				$newls[$h++]=substitute($sobj,$ho,$tobj);
+		}
+		return $newls;
+	}
+	return $lsse;
+}

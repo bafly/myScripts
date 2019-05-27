@@ -1,0 +1,1019 @@
+//v0.1d new  cpvtxskin()
+//v0.1c fix  getbinds(): accpet only transforms in sel
+//      new  dropskin
+//      ren  dropoffskin() > doDropoffSKin()
+//v0.1b new  dropoffskin()
+//      new  confirmIt()
+//      upd  skinit(): packed skinning(union to last selected unskinned meshes)
+//v0.1a upd  some arguemtns tweaks
+
+// TODO: skinto: two scenario
+// usage:
+//      doSkinIt({skinned, unskinned, unskinned, etc}, mode(defulat, oneToOne))
+//      doCopySkin($SCs[0], $trg_SCs, "oneToOne", (removeUnused)1);
+
+// (nb) findrelatedskincluster not understands "|" in front of dagname
+
+source refpair;
+source pairedsel;
+
+proc string promptIt(string $m, string $tx, string $title){
+
+    string $input;
+    // ask copy skin method
+    string $res = `promptDialog 
+        -t $title
+        -m $m
+        -tx $tx
+        -b "OK"  -b "Cancel "
+        -db "OK" -cb "Cancel"`;
+    if ($res != "OK")
+        return "dismiss";
+    $input = `promptDialog -q -tx`;
+    
+    return $input;
+}
+proc string confirmIt(string $m, string $btns[], string $title){
+
+    string $input;
+    // ask copy skin method
+    $nobtn = "Cancel";
+    $btns[size($btns)] = $nobtn;
+    $cmd = `format -s $title -s $m "confirmDialog -t \"^1s\" -m \"^2s\" "`;
+    // string $res = `confirmDialog 
+    //     -t $title
+    //     -m $m
+    //     -b "OK"  -b "Cancel "
+    //     -db "OK" -cb "Cancel"`;
+    for ($btn in $btns){
+        $cmd += `format -s $btn " -b \"^1s\""`;
+    }
+    $cmd += `format -s $nobtn " -cb \"^1s\" -db \"^1s\""`;
+    $res = evalEcho($cmd);
+    if ($res == $nobtn)
+        return "dismiss";
+    
+    return $input;
+}
+
+
+global proc string[] getbinds( string $lssl[] ){
+
+    // 0 - jnts
+    // 1 - binded
+    // 2 - skinCluster
+    // 3 - non binded geometries
+
+    string $items[];
+    string $jnts[];
+    string $geoms[];
+    string $binded[];
+    string $skincls[];
+    int $i;
+    int $j;
+    int $g;
+    int $b;
+
+    if (!size($lssl))
+        $lssl = `ls -sl -tr`;
+    else
+        $lssl = `ls -tr $lssl`;
+
+    for ($sel in $lssl){
+        $sc = `findRelatedSkinCluster $sel`;
+        
+        if (!size($sc)){
+            $geoms[$g++] = $sel;
+            continue;
+        }
+        $skincls[$b] = $sc;
+        $binded[$b++] = $sel;
+
+        $jnts = stringArrayCatenate(`skinCluster -q -inf $sc`, $jnts);
+    }
+    $items = {
+        stringArrayToString($jnts, " "),
+        stringArrayToString($binded, " "),
+        stringArrayToString($skincls, " "),
+        stringArrayToString($geoms, " ")
+    };
+    print "\n  RESULT - joints:\n.....................\n";
+    print $jnts;
+    print "\n  RESULT - binded:\n.....................\n";
+    print $binded;
+    print "\n  RESULT - sclusters:\n..................\n";
+    print $skincls;
+    print "\n  RESULT - geoms:\n.....................\n";
+    print $geoms;
+    print "\n";
+
+    return $items;
+}
+
+global proc string[] skinto(){
+
+    $lssl = `ls -sl`;
+    $skcls = doSkinTo($lssl, {});
+
+    return $skcls;
+}
+
+global proc string[] doSkinTo(string $lssl[], string $jnts[]){
+
+    $data = getbinds($lssl);
+    if (!size($jnts))
+        $jnts = stringToStringArray($data[0], " ");
+    $SCs = stringToStringArray($data[2], " ");
+    $src_geo = stringToStringArray($data[1], " ");
+    $trg_geo = stringToStringArray($data[3], " ");
+    string $trg_SCs[] = doSkin_to($jnts, $trg_geo);
+
+    //TODO:
+    // next two scenario
+    // A: if one src
+    if (size($src_geo) == 1){
+
+        doCopySkin($SCs[0], $trg_SCs, "oneToOne", 1);
+        //
+    }
+    // B: if one trg
+    else if (size($trg_geo) == 1){
+
+        $cmd = `format 
+            -s (stringArrayToString($src_geo, " "))
+            -s $trg_geo
+            ("copySkinWeights "+
+             "-noMirror"+
+             "-surfaceAssociation closestPoint "+
+             "-influenceAssociation oneToOne "+
+             "^1s ^2s;")`;
+        print("cmd: " + $cmd + "\n");
+
+        // xRUI($trg_geo, 1);
+        //
+    }
+    return $trg_SCs;
+
+}
+
+global proc string[] doSkin_to(string $jnts[], string $geoms[]){
+
+    string $trg_SCs[];  
+    int $s;
+    for ($geo in $geoms){
+
+        print(`format 
+            -s $geo "  Skin trg: ^1s\n  Skin infls:\n"`);
+        print $jnts;
+        string $ls_SC[] = `skinCluster -bm 1
+                                 -mi 2
+                                 -rui 0
+                                 -sm 0
+                                 -tsb
+                                 $jnts $geo`;
+        $trg_SCs[$s++] = $ls_SC[0];
+    }
+    return $trg_SCs;
+
+}
+
+// skin to
+global proc string[] skinto_(string $jnts[])
+{
+    string $scs[];
+    string $data[];
+    int $b;
+    $lssl = `ls -sl`;
+    if (!size($jnts))
+        $jnts = `ls -sl -type joint`;
+    if (!size($jnts))
+        return {};
+    $geoms = stringArrayRemove($jnts, $lssl);
+    print $geoms;
+    for ($ge in $geoms){
+        $sc = `findRelatedSkinCluster $ge`;
+        if (size($sc))
+            continue;
+
+        // select $jnts $ge;
+        // $data = `SmoothBindSkin`;
+        $data = `skinCluster -bm 1
+                             -mi 2
+                             -rui 0
+                             -sm 0
+                             -tsb
+                             $jnts $ge`;
+
+        print $data;
+        $scs[$b++] = $data[0];
+    }
+    return $scs;
+}
+
+// remove unused infls
+global proc int rui(string $lssl[]){
+
+    if (!size($lssl))
+        $lssl = `ls -sl`;
+
+    int $i;
+    for ($sel in $lssl){
+        $i += size(`xRUI $sel 1`);
+    }
+    return $i;
+}
+
+global proc string[] xRUI(string $geom, int $doX){
+
+    // $doX: int        - will remove them, if false - query
+    // rtype: stringp[] - unused or removed influences
+
+    string $rui[] = stringArrayRemove(
+        `skinCluster -q -wi $geom`, 
+        `skinCluster -q -inf $geom`);
+    if ($doX)
+        for ($jnt in $rui)
+            skinCluster -e -ri $jnt $geom;
+    return $rui;
+
+}
+
+// obsolete
+global proc string[] do_RUI_(string $geom){
+
+    // reurns ....
+    string $rjnts[];
+    
+    $sc = findRelatedSkinCluster($geom);
+    int $r = 0;
+
+    if (!size($sc))
+        return {};
+    
+    $jnts = `skinCluster -q -inf $sc`;
+    $wjnts = `skinCluster -q -wi $sc`;
+    
+    // if joint not in list of 
+    //      weightned joins - mark it to remove
+    for ($jnt in $jnts){
+        $CHK = 1;
+        for ($wjnt in $wjnts){
+            if ($jnt == $wjnt){
+                $CHK = 0;
+                break;
+            }
+        }
+        if ($CHK)
+            $rjnts[$r++] = $jnt;
+    }
+
+    if ($r)
+        skinCluster -e -ri $rjnts $sc;
+
+    return $rjnts;
+
+}
+// copy skin
+proc copyskin(string $mode){
+    
+    $lssl = `ls -sl`;
+    if (size($lssl) > 2)
+        return;
+    
+    if ($mode == "")
+        $mode = "closestPoint";
+    string $src = $lssl[0];
+    $trgs = stringArrayRemove({$src}, $lssl);
+    print $src;
+    print $trgs;
+    
+    for ($trg in $trgs){
+            
+        copySkinWeights  
+            -noMirror 
+            -surfaceAssociation closestPoint 
+            -influenceAssociation $mode
+            $src $trg;
+        xRUI($trg, 1);
+    }
+}
+
+global proc doCopySkin( string $srcSC,
+                        string $trgsSCs[],
+                        string $mode,
+                           int $xunused ) {
+
+    string $trg[];
+    $src = `skinCluster -q -g $srcSC`;
+
+    for ($trgSC in $trgsSCs){
+        
+        $trg = `skinCluster -q -g $trgSC`;
+        
+        copySkinWeights  
+            -noMirror 
+            -surfaceAssociation closestPoint 
+            -influenceAssociation $mode
+            $src $trg;
+        if ($xunused)
+            // clean every single target
+            print "\ntarget:";
+            print $trg;
+            xRUI($trg[0], 1);
+    }
+}
+
+global proc doCopySkin_( string $src,
+                        string $trgs[],
+                        string $mode,
+                        int $xunused ) {
+
+    for ($trg in $trgs){
+            
+        copySkinWeights  
+            -noMirror 
+            -surfaceAssociation closestPoint 
+            -influenceAssociation $mode
+            $src $trg;
+        if ($xunused)
+            // clean every single target
+            xRUI($trg, 1);
+    }
+}
+global proc doAddInfluence(string $geoms[], string $jnts[]){
+
+    string $cmd;
+    string $addInfl_cmd = "skinCluster -e -wt 0 -lw 1^1s ^2s";
+    // print $addInfl_part;
+    for ($geo in $geoms){
+        string $addInfl_part;
+        $data = getbinds({$geo});
+        $cur_jnts = stringToStringArray($data[0], " ");
+        $delta_jnts = stringArrayRemove($cur_jnts, $jnts);
+        for ($jnt in $delta_jnts){
+            $addInfl_part += (`format -s $jnt " -ai ^1s"`);
+        }
+        $sc = `findRelatedSkinCluster $geo`;
+        $cmd = `format -s $addInfl_part -s $sc $addInfl_cmd`;
+        print(":::: " + $cmd + "\n");
+        eval($cmd);
+    }
+
+}
+// add infl to sel
+proc addinfl(){
+    
+    $lssl = `ls -sl`;
+    $jnts = `ls -sl -type joint`;
+    $geoms = stringArrayRemove($jnts, $lssl);
+
+    doAddInfluence($geoms, $jnts);
+    /*
+    skinCluster 
+        -e  
+        -dr 4 
+        -lw true 
+        -wt 0 
+        -ai deFinger_l_env14 
+        -ai deFinger_l_env15 
+        -ai deFinger_l_env13 
+        skinCluster93;
+    */
+}
+
+global proc reminfl(){
+    $lssl = `ls -sl`;
+    $jnts = `ls -sl -type joint`;
+    $geoms = stringArrayRemove($jnts, $lssl);
+
+}
+
+
+// replace weights
+global proc swapinfl(){
+    /* selct geometries and influences or vice versa - order
+        is not matters.
+
+    // Only matters is influences order:
+        at least two selection - first is source which weights will 
+        distribute on second and others.
+    */
+
+    $lssl = `ls -sl`;
+    $jnts = `ls -sl -type joint`;
+    $geoms = stringArrayRemove($jnts, $lssl);
+    if (size($lssl) < 2){
+        print "\n swapinfl: Select at least two joints\n";
+        return;
+    }
+    $cmd = "skinPercent";
+    for ($inf in $jnts)
+        $cmd += " -tmw " + $inf;
+    string $scl;
+    for ($geo in $geoms){
+        $scl = findRelatedSkinCluster($geo);
+        if ($scl == "")
+            continue;
+        $comp_typ = `getCompType $geo`;
+        string $eval_cmd = `format 
+            -s $scl -s $geo -s $comp_typ
+            ($cmd + " ^1s \"^2s.^3s[*]\"")`;
+        // skinPercent -tmw finger_l_env14 -tmw deFinger_l_env14 $scl;
+        print{$eval_cmd};
+        catchQuiet(eval($eval_cmd));
+    }
+
+}
+global proc string getCompType(string $sel){
+    
+    string $typ = `objectType $sel`;
+    if ($typ == "transform"){
+        $ls_shp = `listRelatives -f -s $sel`;
+        if (!size($ls_shp)){
+            print "\n ! getCompType: No shape is found\n";
+            return "";
+        }
+        $typ = `objectType $ls_shp[0]`;
+    }
+    print {" getCompType: " + $typ};
+    switch($typ){
+        case "mesh":
+            return "pnts";
+        case "nurbsCurve":
+            return "cp";
+        default:
+            break;
+    }
+    return "";
+}
+
+global proc string[] getjnts(){
+
+    $lssl = `ls -sl`;
+    $data = getbinds($lssl);
+    string $jnts[] = stringToStringArray($data[0], " ");
+    return $jnts;
+
+}
+
+global proc skinit(){
+
+    // skincols
+    string $sel;
+    string $pairs[];
+    $data = getbinds(`ls -sl`);
+    string $jnts[] = stringToStringArray($data[0], " ");
+    string $skinned[] = stringToStringArray($data[1], " ");
+    string $notskinned[] = stringToStringArray($data[3], " ");
+
+    if (!size($jnts)){
+
+        // if only not skinned are selected
+        for ($sel in $notskinned){
+
+            $bname = `match "[^|]+$" $sel`;
+            $pairs = `ls ("*:" + $bname)`;
+            print ($pairs[0] + " : " + $sel + "\n");
+            select $pairs[0] $sel;
+            doSkinIt({}, "oneToOne");
+            putinset "_oldGeom" {$pairs[0]};
+        }
+        
+    }
+    else if (!size($notskinned)){
+
+        // if both skinned are selected
+        // 0 - src, 1 - target
+
+    }
+    else{
+        if (size($skinned) == size($notskinned))
+            // if pairs are selected
+            doSkinIt {} "";
+        else{
+            string $mode, $uv_mode;
+            string $sa_mode = "closestPoint";
+            if ($mode == "")
+                $mode = promptIt("Copy Skin Mode", "oneToOne", "skinit");
+            if ($uv_mode == "")
+                $uv_mode = confirmIt("Association Mode", {"uv", "Don't use UVs"}, "skinit");
+            if (size($skinned) < 2){
+                print {"Skin spreading"};
+                for ($notsk in $notskinned)
+                    doSkinIt {$skinned[0], $notsk} $mode;
+            }
+            else{
+                print {"Skin focusing on >>:"};
+                print $notskinned;
+                print {"<<"};
+                for ($notsk in $notskinned){
+                    skinCluster -bm 1 -rui 0 -sm 0 -mi 2 -tsb $jnts $notsk;
+                    // print {"copySkinWeights"};
+                    if ($uv_mode != "uv")
+                        copySkinWeights
+                            -noMirror 
+                            -surfaceAssociation $sa_mode 
+                            -influenceAssociation $mode
+                            $skinned $notsk;
+                    else
+                        copySkinWeights
+                            -noMirror 
+                            -surfaceAssociation $sa_mode 
+                            -uvSet "map1" "map1"
+                            -influenceAssociation $mode
+                            $skinned $notsk;
+                }
+            }
+        }
+        
+    }
+}
+
+global proc doSkinIt( string $lssl[], string $mode ){
+
+    global string $gBaCopySkinMode;
+    string $tx = $gBaCopySkinMode;
+    int $ISINPUT;
+
+    if ($gBaCopySkinMode == "")
+        $tx = "oneToOne";
+
+    if ($mode == ""){
+        $ISINPUT = 1;
+        $mode = "oneToOne";
+    }
+
+    if (!size($lssl))
+        $lssl = `ls -sl`;
+
+    $raw_data = getbinds($lssl);
+    $jnts = stringToStringArray($raw_data[0], " ");
+    $binded = stringToStringArray($raw_data[1], " ");
+    $geoms = stringToStringArray($raw_data[3], " ");
+    if (size($binded) != size($geoms)){
+        print "  <!> size of binded and solid geoms are not equal\n";
+        return;
+    }
+    int $b;
+    for ($bind in $binded){
+        
+        // ask copy skin method
+        if ($ISINPUT){
+            $message = "Type mode [oneToOne, closestJoint...]:";
+            $title = "Copy skin mode";
+            string $mode;
+            $mode = promptIt($message, $tx, $title);
+            if ($mode == "dismiss")
+                return;
+        }
+        
+        $pairs = {$bind, $geoms[$b++]};
+        select $pairs;
+        $scs = skinto_($jnts);
+        select $pairs;
+        $gBaCopySkinMode = $mode;
+        copyskin($mode);
+        print $scs;
+    }
+}
+proc addInfluence(string $jnt, string $items[], float $val){
+
+    // items, list      array of vertices
+    $geoms = stringArrayRemoveDuplicates(`ls -o $items`);
+    for ($geom in $geoms){
+        $ls_skinc = `skinCluster -q -g $geom`;
+        // nb: skinPercent will paint only vertices corresponding to 
+            // defined skinCluster
+        skinPercent -tv $jnt $val $ls_skinc[0] $items;
+    }
+}
+
+
+global proc update(){
+
+    // lssl[0] - src(old)
+    // lssl[1] - src(new)
+
+    $lssl = `ls -l -sl`;
+
+    if (`size $lssl` == 1)
+        $lssl = findRefPair($lssl[0]);
+    print (`format 
+        -s $lssl[0]
+        -s $lssl[1]
+        " src: ^1s, trg: ^2s\n"`);
+
+    doUpdate($lssl[0], $lssl[1]);
+}
+
+global proc doUpdate(string $src, string $pretrg){
+
+    string $trg = $pretrg;
+    
+    $ls_src_par = `listRelatives -p $src`;
+    if (size($ls_src_par))
+        $src = `format -s $ls_src_par[0] -s $src "^1s|^2s"`;
+
+    string $skin_data[] = getbinds({$pretrg});
+    $ls_skincl = stringToStringArray($skin_data[2], " ");
+    
+    if (!size($ls_skincl)){
+        
+        if (`referenceQuery -inr $pretrg`){
+            string $ls_trg_par[] = `listRelatives -p $pretrg`;
+            string $dup[] = `duplicate -rr $pretrg`;
+            $trg = `format -s $dup[0] "|^1s"`;
+            print ("pret: "+$trg + "\n");
+            if (size($ls_trg_par))
+                $trg = $ls_trg_par[0]+$trg;
+            print ("trg: "+$trg + "\n");
+        }
+    }
+    print (`format 
+        -s $src 
+        -s $trg 
+        -s $ls_skincl[0]
+        " src: ^1s, trg: ^2s, skincl: ^3s\n"`);
+    
+    doSkinIt({$src, $trg}, "oneToOne");
+    delete $src;
+
+    if (size($ls_src_par)){}
+        parent $trg $ls_src_par[0];
+}
+
+global proc string[] updInfluences(string $src_skin, string $trg_skin){
+
+    string $addInfl[];
+
+    $src_jnts = `skinCluster -q -inf $src_skin`;
+    $trg_jnts = `skinCluster -q -inf $trg_skin`;
+
+    $addInfl = stringArrayRemove($trg_jnts, $src_jnts);
+
+    $cmd = "skinCluster -e -lw 1 -wt 0";
+    for ($infl in $addInfl){
+        $cmd += `format -s $infl " -ai ^1s"`;
+    }
+    $cmd += " " + $trg_skin;
+    // print (":: " + $cmd + "\n");
+    eval($cmd);
+
+    return $addInfl;
+
+}
+
+global proc updskin(){
+
+    $data = getbinds(`ls -sl`);
+    string $jnts[] = stringToStringArray($data[0], " ");
+    string $skinned[] = stringToStringArray($data[1], " ");
+    string $SCs[] = stringToStringArray($data[2], " ");
+    string $notskinned[] = stringToStringArray($data[3], " ");
+
+    if (!size($notskinned) && size($SCs) == 2){
+        updInfluences($SCs[0], $SCs[1]);
+    }
+}
+
+proc string[] stripNS(string $list[]){
+    
+    string $items[];
+    int $i;
+    for ($it in $list){
+        $dataA = `match "[^:]+$" $it`;
+        $items[$i++] = $dataA;
+    }
+    return $items;
+}
+proc string[] addNS(string $list[], string $ns){
+    
+    string $items[];
+    int $i;
+    for ($it in $list){
+        $new = $ns + $it;
+        $items[$i++] = $new;
+    }
+    return $items;
+}
+
+proc string[] lsrecursion(string $list[]){
+    
+    string $items[] = stringArrayRemove(
+        $list, ls("-r", 1, `stripNS $list`)
+    );
+    return $items;
+}
+global proc translateRig(int $recursion){
+
+    string $lssl[] = `ls -sl`;
+    $bname = `match "[^:]+$" $lssl[0]`;
+    string $ls_home[] = `ls  $bname`;
+    $dataA = `getbinds {$lssl[0]}`;
+    $dataB = `getbinds {$ls_home[0]}`;
+    $sclA = stringToStringArray($dataA[2], " ");
+    $sclB = stringToStringArray($dataB[2], " ");
+    $jntsA = stringToStringArray($dataA[0], " ");
+    string $jntsB[];
+    if ($recursion)
+        $jntsB = lsrecursion($jntsA);
+    else
+        $jntsB = stripNS($jntsA);
+        
+    if (size($jntsA) != (size($jntsB)))
+        print ": <!> : Not all jnts are found\n";
+    if (!size($jntsB))
+        return;
+    if (size($sclB)){
+        skinCluster -e -ub $ls_home[0];
+    }
+    doSkinTo {$lssl[0], $ls_home[0]} $jntsB;
+    
+    print "::Done::\n";
+}
+
+
+global proc string[] chainskin(int $ub){
+
+    // $ub = 1, to unbind before skin
+    string $sel;
+    $lssl = `ls -l -sl`;
+    string $grps[];
+    int $g;
+    for ($sel in $lssl)
+        if (!size(`listRelatives -s -type "mesh" $sel`))
+            $grps[$g++] = $sel;
+    $geoms = stringArrayRemove($grps, $lssl);
+    string $skinned[];
+    int $s;
+    print "\nskined geoms:\n";
+    print $geoms;
+    print "skined groups:\n";
+    print $grps;
+    for ($sel in $geoms){
+        string $pairs[] = getPairedSelection($sel, $grps);
+        for ($pair in $pairs){
+            if ($ub){
+                string $ls_pair[] = `ls $pair`;
+                if (size(findRelatedSkinCluster($ls_pair[0]))){
+                    print ">>unbinding\n";
+                    skinCluster -e -ub $pair;
+                }
+            }
+            doSkinIt({$sel, $pair}, "oneToOne");
+            $skinned[$s++] = $pair;
+        }
+    }
+    return $skinned;
+}
+
+global proc string[] getNewJntsTo(string $lssl[]){
+    
+    //"""Influences are accumulating on last selected geom"""
+
+    string $allJnts[];
+    
+    if (!size($lssl))
+        $lssl = `ls -sl`;
+
+    $trg = $lssl[size($lssl)-1];
+    $srcs = stringArrayRemove({$trg}, $lssl);
+    $src_data = getbinds($srcs);
+    $src_jnts = stringToStringArray($src_data[0], " ");
+    $trg_data = getbinds({$trg});
+    $trg_jnts = stringToStringArray($trg_data[0], " ");
+    $new_jnts = stringArrayRemove($trg_jnts, $src_jnts);
+    
+    return $new_jnts;
+}
+
+global proc string[] getNewJnts(string $lssl[]){
+    
+    //"""Influences are copied from first geom to second"""
+
+    string $allJnts[];
+    
+    if (!size($lssl))
+        $lssl = `ls -sl`;
+    if (size($lssl) > 2)
+        return {};
+    if (!size($lssl))
+        return {};
+    $src = $lssl[0];
+    $trg = $lssl[1];
+    $src_data = getbinds({$src});
+    $src_jnts = stringToStringArray($src_data[0], " ");
+    $trg_data = getbinds({$trg});
+    $trg_jnts = stringToStringArray($trg_data[0], " ");
+    $new_jnts = stringArrayRemove($trg_jnts, $src_jnts);
+    
+    return $new_jnts;
+}
+
+global proc string[] addNewJntsFrom(string $lssl[]){
+
+    if (!size($lssl))
+        $lssl = `ls -sl`;
+    $sz = size($lssl);
+    $src = $lssl[0];
+    $trgs = stringArrayRemove({$src}, $lssl);
+    string $updated[];
+    int $u;
+    for ($trg in $trgs){
+        $new_jnts = getNewJnts({$src, $trg});
+        if (size($new_jnts)){
+            doAddInfluence({$trg}, $new_jnts);
+            $updated[$u++] = $trg;
+        }
+    }
+    return $updated;
+}
+
+global proc string[] addNewJntsTo(string $lssl[]){
+
+    if (!size($lssl))
+        $lssl = `ls -sl`;
+    $sz = size($lssl);
+    $trg = $lssl[$sz-1];
+    $srcs = stringArrayRemove({$trg}, $lssl);
+    string $all_new_jnts[];
+    for ($src in $srcs){
+        $new_jnts = getNewJnts({$src, $trg});
+        $all_new_jnts = stringArrayCatenate(
+            $all_new_jnts,
+            $new_jnts);
+    }
+    doAddInfluence({$trg}, $all_new_jnts);
+    return $all_new_jnts;
+}
+
+global proc selNewJnts(){
+
+    $lssl = `ls -sl`;
+    $new = `getNewJnts $lssl`;
+    select $new $lssl[size($lssl)-1];
+}
+
+global proc skinByClosestPivot(){
+
+    $lssl = `ls -sl`;
+    $jnts = `ls -type joint $lssl`;
+    string $geoms[] = stringArrayRemove($jnts, $lssl);
+    int $i = 0;
+    for ($j in $jnts){
+        print ($i++);
+        vector $pos = `xform -q -ws -t $j`;
+        for ($g in $geoms){
+            vector $gpos = `xform -q -ws -rp $g`;
+            if (abs(mag($pos - $gpos)) < 0.1){
+                
+                //print ($j + " | " + $g + "\n");
+                $sk = `findRelatedSkinCluster $g`;
+                print $g;
+                if ($sk == "")
+                    skinCluster $j $g;
+                print "x\n";
+                break;
+                //$geoms = stringArrayRemoveExact({$g}, $goems);
+            }
+            print "y\n";
+        }
+    }
+}
+
+global proc string[] getSkinned(string $root){
+    
+    $all_root = `ls -dag -s -ni $root`;
+    if (!size($all_root))
+        $all_root = `ls -dag -s -ni -sl`;
+    string $scl[];
+    int $s;
+    for ($geo in $all_root){
+        $find = `findRelatedSkinCluster $geo`;
+        if ($find != ""){
+            $ls_tr = `listRelatives -p $geo`;
+            $scl[$s++] = $ls_tr[0];
+        }
+        
+    }
+    return $scl;
+}
+
+global proc string[] getSkins(string $root){
+    
+    $all_root = `ls -dag -s -ni $root`;
+    if (!size($all_root))
+        $all_root = `ls -dag -s -ni -sl`;
+    
+
+    string $scl[];
+    int $s;
+    for ($geo in $all_root){
+        $find = `findRelatedSkinCluster $geo`;
+        if ($find != ""){
+            $scl[$s++] = $find;
+        }
+        
+    }
+    return $scl;
+}
+
+global proc string[] addInfluenceFromFirstGeom(){
+
+    string $lssl[] = `ls -sl`;
+    $src = $lssl[0];
+    $data = getbinds({$src});
+    string $jnts[] = stringToStringArray($data[0], " ");
+
+    stringArrayRemoveAtIndex(0, $lssl);
+    doAddInfluence($lssl, $jnts);
+    return $jnts;
+}
+
+global proc dropskin(int $mi, int $drop){
+    // selct skinClusters
+    // reset to default skin and adjust dropoff
+
+    for ($sel in `ls -type skinCluster -sl`){
+        setAttr ($sel + ".mi") $mi;
+        $g = `skinCluster -q -g $sel`;
+        $infs = `skinCluster -q -inf $sel`;
+        float $drops[];
+        for ($i=0; $i<size($infs);)
+            $drops[$i++] = $drop;
+        
+        skinCluster -e -ub $sel;
+        $dp = `listConnections -s 0 -d 1 -type dagPose $infs`;
+        if (size($dp))
+            delete $dp;
+        skinCluster -tsb $infs $g;
+        doDropoffSkin($sel, $mi, $drops);
+    }
+}
+
+//////////////////////////////// tools ////////////////////////////////
+global proc int doDropoffSkin(string $sel, int $mi, float $vals[]){
+    
+    setAttr ($sel + ".mi") $mi;
+    $g = `skinCluster -q -g $sel`;
+    $infs = `skinCluster -q -inf $sel`;
+    for ($i=0; $i<size($vals); $i++)
+        skinCluster -e -dr $vals[$i] -inf $infs[$i] $sel;
+    skinPercent -rtd $sel $g;
+    return 0;
+}
+
+//WIP
+global proc ruilast(){
+    // select skinClusters
+    for ($sel in `ls -sl -type skinCluster`){
+        string $infs[] = `skinCluster -q -inf $sel`;
+        $sz = size($infs);
+    }
+}
+
+global proc ruiAtIndex(string $sel, int $idx){
+    string $infs[] = `skinCluster -q -inf $sel`;
+    if (size($infs) > $idx)
+        skinCluster -e -ri $infs[$idx] $sel;
+}
+
+global proc string[] selskinned(){
+    //
+    string $items[];
+    string $sc;
+    int $i;
+    for ($sel in `ls -sl`){
+        // $sc = `skinCluster -q $sel`; // barking at dummy shapes
+        $sc = `findRelatedSkinCluster $sel`;
+        if ($sc != "")
+            $items[$i++] = $sel;
+    }
+    select $items;
+    return $items;
+}
+
+global proc cpvtxskin(){
+    $lssl = `ls -os`;
+    $src = $lssl[0];
+    stringArrayRemoveAtIndex(0, $lssl);
+    string $skinCluster = findSkinClusterFromSelectedComponent($src);
+    print {"copy vertex skin:"};
+    print {$src + ">"};
+    print $lssl;
+    if($skinCluster != ""){
+        $infs = `skinCluster -q -influence $skinCluster`;
+        $wts = `skinPercent -q -v $skinCluster $src`;
+        string $cmd = "skinPercent -normalize false -zeroRemainingInfluences true";
+        int $i;
+        for($i=0; $i<size($infs); $i++) {
+            $cmd += " -transformValue ";
+            $cmd += $infs[$i];
+            $cmd += " ";
+            $cmd += $wts[$i];
+        }
+        $cmd += " ";
+        $cmd += $skinCluster;
+        evalEcho($cmd); 
+    }
+}

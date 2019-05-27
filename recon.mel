@@ -1,4 +1,112 @@
+//v0.1h - new - cpcns() - change childs (copy-move cns)
+//v0.1g - upd - addSCNS() - arg doKeepOffset
+//      - new - cnsgrp()
+//v0.1f - upd - doRecon() - redo with connected blendings
+//      - upd - renamed doCnsGetTargets > _getCnsTargets()
+//v0.1e - upd - ! not tested ! doOS - fix new node names
+//v0.1d - new - addSCNS - add scale constraint to already constrained
+//v0.1c - new - repcon, oscon, addOSBlendAttr, doOS
+//v0.1b - new - cnsgetch, cnsgettrg
 //v0.1a - xcon - removes and returns removed results
+
+global proc oscon(){
+    // select ctrl its group and parent space transfrom
+    $lssl = `ls -sl`;
+    $bl_at = "BlendSpace";
+    if (size($lssl) < 3)
+        return;
+    $ctrl = $lssl[0];
+    $grp = $lssl[1];
+    $os = $lssl[2];
+    $bl_at = $ctrl + $bl_at;
+    $bl_plg = $ctrl + "." + $bl_at;
+    print {$bl_plg};
+}
+
+global proc addOSBlendAttr(string $sel, string $at_data[], float $dv){
+    float $min = 0.0;
+    float $max = 1.0;
+    if ($dv > $max){
+        $max = $dv;
+    }
+    if (size($at_data) == 1){
+        $at_data[1] = "";
+    }
+    addAttr -ln $at_data[0] -nn $at_data[1]
+            -at double
+            -min $min -max $max
+            -k 1
+            $sel;
+    $plg = $sel + "." + $at_data[0];
+    setKeyframe -f $dv -t 1 $plg;
+}
+global proc string[] doOS(string $sel, string $os_grp, string $os){
+    // args:
+    //  -sel - root group of control
+    //  -os_grp - name of new group child of constraint
+    //            if empty, $sel will be used as os_grp if it exist
+    //  -os - parent space object - target of constraint
+    
+    string $cns_data[2];
+
+    // solve given args
+    string $grp = $sel;
+    if ($os_grp != ""){
+        $grp = $os_grp;
+        if (!`objExists $grp`){
+            $new_grp = doGr($sel, "_os", 1, 1);
+            $grp = `rename $new_grp $grp`;
+        }
+    }
+
+    // main job
+    string $cns_res[] = `parentConstraint -mo $os $grp`;
+    string $cns = $cns_res[0];
+    string $bn = `match "[^|]+$" $grp`;
+    string $pb = `createNode -n ("pb_" + $bn + "_os") pairBlend`;
+    connectAttr ($cns + ".crx") ".irx2";
+    connectAttr ($cns + ".cry") ".iry2";
+    connectAttr ($cns + ".crz") ".irz2";
+    connectAttr ($cns + ".ctx") ".itx2";
+    connectAttr ($cns + ".cty") ".ity2";
+    connectAttr ($cns + ".ctz") ".itz2";
+    connectAttr -f ".orx" ($grp + ".rx");
+    connectAttr -f ".ory" ($grp + ".ry");
+    connectAttr -f ".orz" ($grp + ".rz");
+    connectAttr -f ".otx" ($grp + ".tx");
+    connectAttr -f ".oty" ($grp + ".ty");
+    connectAttr -f ".otz" ($grp + ".tz");
+    $cns_data = {$cns, $pb};
+    return $cns_data;
+}
+
+global proc repcon(){
+    // reconstraint - replacing first selected target to second
+    //
+    // usage:
+    //  a. Select new_target and parentConstraint (order is not matter)
+    //  or if constarint has multiple targets:
+    //  b. Select old_taarget new_target and parentConstraint
+    //      (order is only matter between targets)
+    //  (!) new target will be of index 1 (".w1") if constraint has one target
+    //  (!) if constraint has multiple targets and only one target is selected
+    //      constraint's last target will be replaced to selected
+
+    $lssl = `ls -sl`;
+    $ls_cns = `ls -type constraint $lssl`;
+    $targets = stringArrayRemove($ls_cns, $lssl);
+    $old_tg = $targets[0];
+    $new_tg = $targets[size($targets)-1];
+    if (size($targets) == 1){
+        $ls_tg = `parentConstraint -q -tl $ls_cns[0]`;
+        $old_tg = $ls_tg[size($ls_tg)-1];
+    }
+    parentConstraint -e -mo
+                     $new_tg $ls_cns[0];
+    parentConstraint -e -rm
+                     $old_tg $ls_cns[0];
+}
+
 global proc string[] recon(){
     string $ls_cns[];
     $lssl = `ls -sl`;
@@ -36,7 +144,7 @@ global proc string doReconstraint(string $cns, string $chld){
 
     if (!size($tls)){
         print "x_X\n";
-        return {};
+        return "";
     }
 
     $eval_cmd += " " + stringArrayToString($tls, " ");
@@ -53,13 +161,14 @@ global proc string doReconstraint(string $cns, string $chld){
     }
     if ($res){
         print {" ! Can't swtich off target weights: " + $cns};
-        return {};
+        return ""   ;
     }
     // print{"Failed: " + $res};
     // print "tls: ";
     // print $tls;
     // recreate old constraint
-    delete $cns;
+    // if ($remove)
+    //     delete $cns;
     print {" >>: " + $eval_cmd};
     $ls_cns = eval($eval_cmd);
     if (`objExists $ls_cns[0]`){
@@ -75,6 +184,7 @@ global proc string doReconstraint(string $cns, string $chld){
 }
 
 global proc string[] doRecon(string $sel){
+    // redo constraint with blend connections
 
     // select child
     string $cns;
@@ -87,7 +197,30 @@ global proc string[] doRecon(string $sel){
         return {};
     }
     for ($cns in $ls_con){
+        // save blend connections:
+        // - get targets
+        $trgs = getCnsTargets($cns);
+        $sz_t = size($trgs);
+        string $cns_w_plgs[];
+        string $blend_plgs[];
+        for ($i=0; $i<$sz_t; $i++){
+            $cns_w = `format -s $cns -s $i "^1s.w^2s"`;
+            string $ls_plgs[] = `listConnections -s 1 -d 0 -p 1 $cns_w`;
+            $cns_w_plgs[$i] = $cns_w;
+            $blend_plgs[$i] = $ls_plgs[0];
+        }
+        // - disconnect if any exists
+        $pairs = `listConnections -c 1 -p 1 -s 1 -d 0 $cns_w_plgs`;
+        for ($i=0; $i<size($pairs); $i+=2)
+            disconnectAttr $pairs[$i+1] $pairs[$i];
+        
+        // redo constraint
         $cns = `doReconstraint $cns $sel`;
+        
+        // restore blend connectinos
+        for ($i=0; $i<size($pairs); $i+=2)
+            connectAttr $pairs[$i+1] $pairs[$i];
+        
         if ($cns != "")
             $ls_cns = stringArrayCatenate($ls_cns, {$cns});
     }
@@ -256,26 +389,194 @@ global proc int doDeleteConstraints(string $lssl[]){
     return $res;
 }
 
-global proc string[] selcnstl(){
+global proc string[] cnsgettrg(){
     string $items[];
     string $lssl[] = `ls -sl`;
     //$sel = $lssl[0]
     for ($sel in $lssl){
-        $ls_cns = `listConnections -s 0 -d 1 -type constraint ($sel + ".pim")`;
-        if (size($ls_cns))
-            for ($cns in $ls_cns){
-                $cns_cmds = `getConEval $cns`;
-                $targets = eval($cns_cmds[1]);
-                if (size($targets))
-                    $items = stringArrayCatenate($items, $targets);
-            }
+        $targets = _getCnsTargets($sel);
+        if (size($targets))
+            $items = stringArrayCatenate($items, $targets);
     }
-    select $items;
+    if (size($items))
+        select $items;
     return $items;
+}
+
+global proc string[] _getCnsTargets(string $sel){
+    // get target from selected(constrainted) child
+    string $targets[];
+    $ls_cns = `listConnections -s 0 -d 1 -type constraint ($sel + ".pim")`;
+    if (size($ls_cns)){
+        $cns_cmds = `getConEval $ls_cns[0]`;
+        $targets = eval($cns_cmds[1]);
+    }
+    return $targets;
+}
+
+global proc string[] getCnsTargets(string $cns){
+    // get target from selected(constrainted) child
+    string $targets[];
+    $cns_cmds = `getConEval $cns`;
+    $targets = eval($cns_cmds[1]);
+    return $targets;
+}
+
+global proc string[] cnsgetch(){
+    // returns list of childs
+    string $items[];
+    string $lssl[] = `ls -sl`;
+    //$sel = $lssl[0]
+    for ($sel in $lssl){
+        $ls_cns = `listConnections -s 0 -d 1 -type constraint ($sel + ".pm")`;
+        if (!size($ls_cns))
+            continue;
+        for ($cns in $ls_cns){
+            $ls_chld = `listConnections -s 1 -d 0 ($cns + ".cpim")`;
+            if (!size($ls_chld)){
+                print {"  ! Broken Constraint: " + $cns};
+                continue;
+            }
+            $items = stringArrayCatenate($items, $ls_chld);
+        }
+    }
+    if (size($items))
+        select $items;
+    return $items;
+}
+
+global proc string[] doCnsGetChilds(string $sel){
+    // find child from given target
+    string $childs[];
+    $ls_cns = `listConnections -s 0 -d 1 -type constraint ($sel + ".pm")`;
+    if (size($ls_cns))
+        for ($cns in $ls_cns){
+            $ls_chld = `listConnections -s 1 -d 0 ($cns + ".cpim")`;
+            if (size($ls_chld))
+                $childs = stringArrayCatenate($childs, $ls_chld);
+        }
+    return $childs;
 }
 
 global proc int xcon(){
     // remove constraints on selected items
     int $res = doDeleteConstraints({});
+    return $res;
+}
+
+global proc string[] addSCNS(int $doKeepO){
+    string $lssl[] = `ls -sl -tr`;
+    string $items[];
+    int $i;
+    // $sel = $lssl[0]
+    for ($sel in $lssl){
+        $ls_cns = `listConnections -s 0 -d 1 -type constraint ($sel + ".pim")`;
+        if (size($ls_cns)){
+            if (size(`listConnections -s 0 -d 1 -type scaleConstraint ($sel + ".pim")`))
+                continue;
+            $trgs = _getCnsTargets($sel);
+            if ($doKeepO)
+                $scns = `scaleConstraint -mo $trgs[0] $sel`;
+            else
+                $scns = `scaleConstraint $trgs[0] $sel`;
+            $items[$i++] = $scns[0];
+        }
+    }
+    return $items;
+}
+
+global proc string doReCNS(string $A, string $B){
+    // swaping childs from A to B
+    $ls_cns = `findCns $A`;
+    if (!size($ls_cns))
+        return "";
+    $cns = `doReconstraint $ls_cns[0] $B`;
+    return $cns;
+
+}
+
+global proc int retrgcns(){
+    string $lssl[] = `ls -sl`;
+    string $ls_cns[] = `ls -type constraint $lssl`;
+    $targets = stringArrayRemove($ls_cns, $lssl);
+    $src = $targets[0];
+    $trg = $targets[1];
+    $res = doRetargetConstraint($src, $trg, $ls_cns[0]);
+    return $res;
+}
+
+global proc int doRetargetConstraint(string $src, string $trg, string $cns){
+    // returns 0 if all success, 0 < numbers of failed connections
+    int $res;
+    string $ls_plgs[] = `listConnections -s 0 -d 1 -type constraint -p 1 $src`;
+    for ($plg in $ls_plgs){
+        $cur_cns = plugNode($plg);
+        if ($cur_cns != $cns)
+            continue;
+        // print {$plg};
+        string $src_plg[] = `listConnections -s 1 - d 0 -p 1 $plg`;
+        $new_plg = `substitute "^.[^.]+" $src_plg[0] $trg`;
+        $cur_res = catchQuiet(`connectAttr -f $new_plg $plg`);
+        if ($cur_res){
+            print (`format -s $src_plg[0]
+                           -s $plg " [! can't connect] ^1s >> ^2s\n"`);
+            $res = $cur_res;
+        }
+    }
+    return $res;
+}
+
+global proc string[] cnsgrp(){
+    // move constraints of selected childs to created groups
+    string $items[];
+    int $i;
+    $lssl = `ls -sl`;
+    // $sel = $lssl[0]
+    for ($sel in $lssl){
+        $ls_cns = stringArrayRemoveDuplicates(
+            `listConnections -type constraint $sel`
+        );
+        if (!size($ls_cns))
+            continue;
+        $ls_par = `listRelatives -f -p $sel`;
+        $cnsgrp = `group -em -n ($sel + "_grp")`;
+        $ls_trgs = getCnsTargets($ls_cns[0]);
+        matchTransform $cnsgrp $ls_trgs[0];
+        // $cns = $ls_cns[0]
+        for ($cns in $ls_cns)
+            doReconstraint($cns, $cnsgrp);
+        parent $sel $cnsgrp;
+        if (size($ls_par)){
+            $repar = `parent $cnsgrp $ls_par[0]`;
+            $cnsgrp = $repar[0];
+        }
+        delete `ls $ls_cns`;
+        $items[$i++] = $cnsgrp;
+    }
+    return $items;
+}
+
+global proc int cpcns(string $op){
+    // move(copy/cut) constraints from one child to another
+    // [select two transforms]
+    // Args:
+    //  - $op, if 0 - copy, 1 - cut
+    string $lssl[] = `ls -sl`;
+    string $ls_cns[];
+    for ($sel in $lssl){
+        $ls_tmp = findCns($sel);
+        if (size($ls_tmp))
+            $ls_cns = stringArrayCatenate($ls_tmp, $ls_cns);
+        
+    }
+    $targets = stringArrayRemove($ls_cns, $lssl);
+    $src = $targets[0];
+    $trg = $targets[1];
+    int $res;
+    //$cns = $ls_cns[0]
+    for ($cns in $ls_cns)
+        $res += doReconstraint($cns, $trg);
+    if ($op)
+        delete $ls_cns;
     return $res;
 }

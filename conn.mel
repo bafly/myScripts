@@ -1,3 +1,7 @@
+//v0.2c     19/11'18: upd: conPB(): extend arg logics: now node.plug can be used
+//v0.2b     09/11'18: upd: conDoEqualize(): fix setAttr of connected attr
+//v0.2a     09/10'18: upd: conPB(): now can use only two selected items
+//                    new: conrev(): reverse connection of selected channels
 //v0.2      02/05'18: new: conUC(): convert selected channels connection
 //                    new: conPB(): connect first two sources to last 
 //                         target with pb
@@ -391,16 +395,27 @@ global proc conADL(){
 // global proc conPB(float $blend){
 global proc string conPB(string $blend){
     // blend: if string passed with "."(dot) will create attriute on A item
-    //      else will convert to float value
+    //      if not already exists else will convert to float value
     // returns: blendWeighted.weight plug
     string $blend_plg;
+    string $srcA, $srcB, $trg;
+    string $srcB_p, $trg_p;
     float $blend_val;
+
     $lssl = `ls -sl -tr`;
-    if (size($lssl) < 3)
-        return "";
-    $srcA = $lssl[0];
-    $srcB = $lssl[1];
-    $trg = $lssl[2];
+    if (size($lssl) > 2){
+        $srcA = $lssl[0];
+        $srcB = $lssl[1];
+        $trg = $lssl[2];
+    }
+    else{
+        if (size($lssl) > 1){
+            $srcA = $lssl[0];
+            $trg = $lssl[1];
+        }
+        else
+            return "";
+    }
     $lscb = `channelBox -q -sma mainChannelBox`;
     // filter only rotate and translate
     if (!size($lscb))
@@ -409,22 +424,52 @@ global proc string conPB(string $blend){
     $pb = `createNode -n $pb -ss pairBlend`;
     for ($at in $lscb){
         $srcA_p = $srcA + "." + $at;
-        $srcB_p = $srcB + "." + $at;
+        if (`objExists $srcB`)
+            $srcB_p = $srcB + "." + $at;
         $trg_p = $trg + "." + $at;
         doConPairBlend($srcA_p, $srcB_p,
                        $trg_p, $pb
                        );
     }
     string $wg_plg = $pb + ".w";
-    if (startsWith($blend, ".")){
-        $blend_plg = $srcA + $blend;
-        $blend_at = `match "[^.]+$" $blend`;
-        if (!`objExists $blend_plg`)
-            addAttr -at "float" -ln $blend_at -k 1 $srcA;
-        connectAttr -f $blend_plg $wg_plg;
-    }
-    else
+    string $mch_char = `match "[a-zA-Z][^.]+" $blend`;
+    string $mch_dig = `match "[0-9][^.]*" $blend`;
+    if ($mch_dig != ""){
+        $blend_val = $blend;
         setAttr $wg_plg $blend_val;
+    }
+    else{
+        $plgNd = `plugNode $blend`;
+        $plgAt = `plugAttr $blend`;
+        if (`objExists $plgNd`)
+            $plgNd = $srcA;
+        if (startsWith($blend, "."))
+            $plgAt = `match "[^.]+$" $blend`;
+        if ($plgAt == "")
+            $plgAt = "blendValue";
+        $blend_plg = `format -s $plgNd -s $plgAt "^1s.^2s"`;
+        if (`objExists $blend_plg`){
+            connectAttr -f $blend_plg $wg_plg;
+            // $blend_plg = $blend;
+        }
+        else{
+            print {"Can't find blend control: " + $blend_plg};
+            return "";
+        }
+        
+    }
+    
+    // else
+    //     if (startsWith($blend, ".")){
+    //         $blend_plg = $srcA + $blend;
+    //         $blend_at = `match "[^.]+$" $blend`;
+    //         if (!`objExists $blend_plg`)
+    //             addAttr -at "float" -ln $blend_at -k 1 $srcA;
+    //         connectAttr -f $blend_plg $wg_plg;
+    //     }
+    //     else{
+            
+    //     }
     return $wg_plg;
 }
 
@@ -455,7 +500,8 @@ string doConPairBlend(string $srcA, string $srcB,
         return $pb;
     }
     connectAttr -f $srcA $pb1_p;
-    connectAttr -f $srcB $pb2_p;
+    if (`objExists $srcB`)
+        connectAttr -f $srcB $pb2_p;
     connectAttr -f $pbOut_p $trg;
     // print "|end\n";
     return $pb;
@@ -708,6 +754,19 @@ global proc string doRevCon(
     return $node_out_plg;
 }
 
+global proc int conrev(){
+    $lscb = getPlugsFromCB();
+    int $u;
+    for ($plg in $lscb){
+        $lscon = `listConnections -s 1 -d 0 -p 1 $plg`;
+        if (!size($lscon))
+            continue;
+        $src_plg = $lscon[0];
+        $rev[$u++] = doRevCon($src_plg, $plg, "x");
+    }
+    return $u;
+}
+
 global proc conequalize(string $plgA, string $plgB){
 
     $lssl = conSortSelection({}, $plgA, $plgB);
@@ -738,7 +797,7 @@ global proc conDoEqualize(string $src_plg, string $trg_plg){
 
     if (`objExists $src_plg`){
         float $val = `getAttr $src_plg`;
-        setAttr $trg_plg $val;
+        catchQuiet(`setAttr $trg_plg $val`);
     }
 }
 

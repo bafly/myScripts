@@ -1,0 +1,26 @@
+global proc string refinfo(){
+    
+    string $info;
+    $lssl = `ls -sl`;
+    $fpath = `referenceQuery -f $lssl[0]`;
+    
+    string $os = `about -os`;
+    if (`match "linux" $os` == "linux"){
+        
+        $data = stringToStringArray(system("ls -l "+$fpath), " ");
+        $info += $data[2] + " ";
+        $date = `stringArrayToString {$data[6], $data[7], $data[8]} " "`;
+        $info += $date;
+    }
+    else{
+        $data = system(`format -s $fpath "dir \"^1s\""`);
+        $info += $data;
+    }
+    return $info;
+}
+
+global proc refop(){
+    string $info;
+    $lssl = `ls -sl`;
+    $fpath = `referenceQuery -f $lssl[0]`;
+}

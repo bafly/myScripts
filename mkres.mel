@@ -1,0 +1,420 @@
+//v0.1a
+// TODO check intersections
+
+// create objectSets for specific actions:
+// use format: RIGs_PUB_<LOD>_<action>:
+// - RIGs_PUB_prx_make      - with objects to be appended to asset
+// - RIGs_PUB_prx_inmesh    - with objects which shapes will override target pair
+// - RIGs_PUB_prx_repshp    - with objects which shapes will replace target pair
+// - RIGs_PUB_prx_replace   - with objects which will replace target pair
+// - RIGs_PUB_prx_remove    - with objects that should be excluded
+// - RIGs_PUB_prx_hide      - with objects that should be kept but hiddin
+
+
+// utils //
+
+// replace shape
+global string $avfxRigRes;
+print {"\n:: Defined rig res: " + $avfxRigRes};
+
+global proc string[] substringlist(
+        string $fnd, string $lssl[], string $rep){
+    // may return same input twice:
+    //  {"your_string"} >> result >> {"your_string"}
+    if (!size($lssl))
+        $lssl = `ls -sl`;
+    string $replaced[];
+    int $r;
+    for ($sel in $lssl)
+        $replaced[$r++] = `substitute $fnd $sel $rep`;
+    
+    return $replaced;
+}
+
+global proc string findOrig(string $obj){
+    $out_p = "o";
+    string $ls_shps[] = `listRelatives -f -s $obj`;
+    if (!`objectType -i "mesh" $ls_shps[0]`){
+        $out_p = "ws";
+    }
+    string $shp;
+    for ($shp in $ls_shps){
+        if (!`getAttr ($shp + ".io")`)
+            continue;
+        $out_plg = `format -s $shp -s $out_p "^1s.^2s"`;
+        if (!size(`listConnections -s 0 -d 1 $out_plg`))
+            continue;
+        break;
+    }
+    return $shp;
+}
+
+global proc string doBurnShape(
+        string $A, string $B, int $xA){
+    // overrride shape B with shape A
+    $out_p = "o";
+    $in_p = "i";
+    string $ls_shps[] = `listRelatives -f -s -ni $A`;
+    if (!`objectType -i "mesh" $ls_shps[0]`){
+        $out_p = "ws";
+        $in_p = "cr";
+    }
+    $A = findOrig($A);
+    $B = findOrig($B);
+    $cmd_conn = `format -s $A -s $out_p
+                        -s $B -s $in_p
+                        "connectAttr -f ^1s.^2s ^3s.^4s"`;
+    $cmd_disconn = `format -s $A -s $out_p
+                           -s $B -s $in_p
+                           "disconnectAttr ^1s.^2s ^3s.^4s"`;
+    $cmd_del = `format -s $A "delete ^1s"`;
+    // returns input plug
+    evalDeferred("-en", $cmd_conn);
+    if ($xA)
+        evalDeferred("-low", $cmd_del);
+    else
+        evalDeferred("-low", $cmd_disconn);
+    return $A;
+}
+
+global proc string doReplaceObj(
+        string $A, string $B, int $xB){
+    
+    $ls_par = `listRelatives -f -p $B`;
+    $B = `rename $B ("_tmp#")`;
+    if (size($ls_par)){
+        $repar = `parent $A $ls_par[0]`;
+        $A = $repar[0];
+    }
+    else{
+        $repar = `parent -w $A`;
+        $A = $repar[0];
+    }
+    if ($xB)
+        delete $B;
+    
+    return $A;
+}
+
+global proc string[] doReplaceShp(
+    // cleaner than in/out mesh
+        string $A, string $B, int $xB){
+    // get shps from source A and parent to B
+    // sel1 / sel2 / delete sel2 / relative position(parent -r)
+    string $a_shps[] = `listRelatives -s -f $A`;
+    string $b_shps[] = `listRelatives -s -f $B`;
+    string $items[];
+    $sz_bs = size($b_shps);
+    // print {"B: " + $B};
+    if ($xB)
+        delete $b_shps;
+    for ($i=0, $j=0; $i<size($a_shps); $i++){
+        if ($i >= $sz_bs)
+            break;
+        $src = $a_shps[$i];
+        $repar = `parent -r -s $src $B`;
+        $items[$j++] = $repar[0];
+    }
+    return $items;
+}
+
+global proc burnShapes(string $pairs[]){
+    for ($i=0; $i<size($pairs); $i+=2){
+        $src = $pairs[$i];
+        $trg = $pairs[$i+1];
+        print { $src + " >hot> " + $trg};
+        doBurnShape $src $trg 1;
+    }
+}
+
+global proc replaceObjs(string $pairs[]){
+    for ($i=0; $i<size($pairs); $i+=2){
+        $src = $pairs[$i];
+        $trg = $pairs[$i+1];
+        print { $src + " >> " + $trg};
+        doReplaceObj $src $trg 1;
+    }
+}
+
+global proc replaceShps(string $pairs[]){
+    for ($i=0; $i<size($pairs); $i+=2){
+        $src = $pairs[$i];
+        $trg = $pairs[$i+1];
+        // print { $src + " >>" + $trg};
+        doReplaceShp $src $trg 1;
+    }
+}
+
+// find pairs *_prx >> *_org
+global proc string[] findreplace(
+        string $ls[], string $fnd, string $rep){
+    
+    // returns only existing pairs:
+    //  0(even) - src(init), 1(odd) - result .. 
+    string $pairs[];
+    string $sel, $bn;
+    int $p, $err;
+    string $neg_res[];
+    $rep_items = `substringlist $fnd $ls $rep`;
+    
+    for ($i=0; $i<size($ls); $i++){
+        $rep = $rep_items[$i];
+        $sel = $ls[$i];
+        // if result same as input
+        if ($rep != $sel && `objExists $rep`){
+            $pairs[$p++] = $sel;
+            $pairs[$p++] = $rep;
+            continue;
+        }
+        $neg_res[$err++] = $rep;
+    }
+    if (!$err)
+        print {" ^_^"};
+    else{
+        print $neg_res;
+        print {" >_<"};
+    }
+    return $pairs;
+}
+
+// working sets info
+// returns 0 on success
+// args:
+//  - res - shorthand of rig/geo resolution original, 
+//  proxy and dummy: "org", "prx", "dum"
+//  - main_res - main rigged geometry resolution,
+// default - "org"
+
+// NB: not tested!
+global proc string[] res_make(
+        string $res, string $main_res){
+    
+    // reparenting geometries to "geo" grp
+    // "geo" must exist
+    if ($main_res == "")
+        $main_res = "org";
+    string $items[];
+    $makeset = `format -s $res "RIGs_PUB_^1s_make"`;
+    print {"\n// " + $makeset + " //"};
+    if (`objExists $makeset`){
+        $items = `sets -q $makeset`;
+        $it_sz = size($items);
+        print `format -s $main_res 
+                      -s $res
+                      -s $it_sz
+                      "\n Adding ^3s objects ^2s > ^1s\n"`;
+        if ($it_sz && `objExists "geo"`){
+            parent $items geo;
+            showHidden $items;
+        }
+    }
+    return $items;
+}
+
+global proc string[] res_inmesh(
+        string $res, string $main_res){
+    
+    // override shapes
+    string $items[];
+    $inmeshset = `format -s $res "RIGs_PUB_^1s_inmesh"`;
+    print {"\n// " + $inmeshset + " //"};
+    string $pairs[];
+    if (`objExists $inmeshset`){
+        $items = `sets -q $inmeshset`;
+        $it_sz = size($items);
+        print `format -s $main_res
+                      -s $res
+                      -s $it_sz
+                      "\n Overriding ^3s shapes ^2s > ^1s\n"`;
+        if ($it_sz){
+            $pairs = `findreplace $items $res $main_res`;
+            if (size($pairs))
+                burnShapes $pairs;
+        }
+    }
+    return $items;
+}
+
+global proc string[] res_repshps(
+        string $res, string $main_res){
+    
+    // replacing shapes of main geometries
+    // return pairs;
+    string $items[];
+    $repshpset = `format -s $res "RIGs_PUB_^1s_replaceShapes"`;
+    print {"\n// " + $repshpset + " //"};
+    string $pairs[];
+    if (`objExists $repshpset`){
+        $items = `sets -q $repshpset`;
+        $it_sz = size($items);
+        print `format -s $main_res
+                      -s $res
+                      -s $it_sz
+                      "\n Replacing ^3s shapes ^2s > ^1s\n"`;
+        if ($it_sz){
+            $pairs = `findreplace $items $res $main_res`;
+            if (size($pairs))
+                replaceShps $pairs;
+        }
+        // showHidden $items;
+    }
+    return $pairs;
+}
+global proc string[] res_replace(
+        string $res, string $main_res){
+
+    // replacing objects (whole transform with its shapes)
+    string $items[];
+    $repset = `format -s $res "RIGs_PUB_^1s_replace"`;
+    print {"\n// " + $repset + " //"};
+    string $pairs[];
+    if (`objExists $repset`){
+        $items = `sets -q $repset`;
+        $it_sz = size($items);
+        print `format -s $res
+                      -s $main_res
+                      -s $it_sz
+                      "\n Replacing ^3s transforms ^2s > ^1s\n"`;
+        if ($it_sz){
+            $pairs = `findreplace $items $res $main_res`;
+            if (size($pairs))
+                replaceObjs $pairs;
+        }
+    }
+    return $items;
+}
+
+global proc string[] res_remove(
+        string $res, string $extend[], string $exclude[]){
+    
+    // returns list of survived items
+    string $items[];
+    $rmset = `format -s $res "RIGs_PUB_^1s_remove"`;
+    print {"\n// " + $rmset + " //"};
+    if (`objExists $rmset`){
+        $items = `sets -q $rmset`;
+        $items = stringArrayCatenate($extend, $items);
+        $items = stringArrayRemove($exclude, $items);
+        
+        $it_sz = size($items);
+        print `format -s $it_sz
+                      "\n Removing ^1s item(s)"`;
+        $ext_sz = size($extend);
+        print `format -s $ext_sz
+                      "(Appending: ^1s item(s); "`;
+        $exc_sz = size($exclude);
+        print `format -s $exc_sz
+                      "Excluded: ^1s item(s))\n"`;
+        if ($it_sz)
+            delete($items);
+    }
+    string $items_left[] = `ls $items`;
+    return $items_left;
+}
+
+// main //
+// resave first
+
+global proc organize_sets(){
+    // organize sub sets
+    $ctrl_sets = `ls -sets "CTRLs_*"`;
+    $main_cs = "CTRLs_All";
+    if (`objExists $main_cs`){
+        $_id = stringArrayFind($main_cs, 0, $ctrl_sets);
+        stringArrayRemoveAtIndex($_id, $ctrl_sets);
+        sets -fe $main_cs $ctrl_sets;
+    }
+}
+
+global proc pub_sets_action(string $res){
+    // res - rig_tag: "org" "prx" "dum"
+    $actions = {
+        "Organizing geometries",
+        "Remove other res",
+        "Hiding",
+        "Cleaning up"
+    };
+    $main_res = "org";
+    print {" [i] Actions to be done:"};
+    for ($act in $actions)
+        print {" - " + $act};
+    // working sets
+    // - make - inmesh - replaceShape - replace - remove - hide
+    string $save_items[];
+    // 0.0 / add geometries // !CHECK
+    $mk_items = `res_make $res $main_res`;
+    // 0.1 / override shapes // TODO:
+    $inm_items = `res_inmesh $res $main_res`;
+    // 0.2 / replace shapes // CHECK
+    $repshp_items = `res_repshps $res $main_res`;
+    // TODO check intersections
+    // 0.3 / replace (deformed) geometries //
+    $rep_items = `res_replace $res $main_res`;
+    print {" >> " + $actions[0] + ": DONE"};
+    // 1. remove other resolutions //
+    $save_items = stringArrayCatenate($mk_items, $save_items);
+    $save_items = stringArrayCatenate($repshp_items, $save_items);
+    $save_items = stringArrayCatenate($rep_items, $save_items);
+    res_remove $res {} $save_items;
+    print {" >> " + $actions[1] + ": DONE"};
+
+    // 2. hide other stuff //
+    hide `ls -sets "RIGs_PUB_*_hide"`;
+    print {" >> " + $actions[2] + ": DONE"};
+
+    // 3. remove action object sets //
+    delete `ls -set "RIGs_PUB_*"`;
+    print {" >> " + $actions[3] + ": DONE"};
+}
+
+global proc string get_res_from_prepublish(){
+    $fn = basenameEx(`file -q -sn`);
+    $spl = stringToStringArray($fn, "_");
+    $res = $spl[size($spl)-1];
+    return $res;
+}
+
+// main
+global proc mkres(){
+    global string $avfxRigRes;
+    string $rigres, $rigres_tag;
+    if ($avfxRigRes != "")
+        $rigres = $avfxRigRes;
+    else{
+        $rigres = get_res_from_prepublish();
+        $avfxRigRes = $rigres;
+    }
+    
+    if ($rigres_tag == "")
+        switch ($rigres){
+            case "original":
+                $rigres_tag = "org";
+                break;
+            case "proxy":
+                $rigres_tag = "prx";
+                break;
+            case "dummy":
+                $rigres_tag = "dum";
+                break;
+            default:
+                $rigres_tag = $rigres;
+                break;
+        }
+            
+    print {" |rig res: " + $rigres};
+    print {" |rig tag: " + $rigres_tag};
+
+    // organize and cleanup hierarchy
+    print {(string)`format -s $rigres "\n// Processing [^1s] actions: ..."`};
+    if ($rigres != ""){
+        $_try = catchQuiet(`pub_sets_action $rigres_tag`);
+        print {(string)`format -s $rigres "// Processing [^1s] actions: DONE"`};
+    }
+
+    // organize control sets
+    organize_sets();
+    print {" << Organizing Control Sets: DONE"};
+    print {(string)`format -s $rigres "<< Processing [^1s]: DONE"`};
+}
+
+// mkres;

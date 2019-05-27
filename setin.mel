@@ -1,0 +1,118 @@
+//v0.1a  new  dupset()
+
+global proc string[] setin(){
+    
+    string $set;
+    string $lssl[] = `ls -sl`;
+
+    if (size($lssl) < 2)
+        return {};
+
+    //$set = `ls -set $lssl`;
+    ////////// check complete //////////
+    
+    $set = $lssl[size($lssl)-1];
+
+    $items = stringArrayRemove({$set}, $lssl);
+    sets -add $set $items;
+    return $items;
+}
+
+global proc string[] setout(){
+
+    string $set;
+    string $lssl[] = `ls -sl`;
+
+    if (size($lssl) < 2)
+        return {};
+
+    //$set = `ls -set $lssl`;
+    ////////// check complete //////////
+    
+    $set = $lssl[size($lssl)-1];
+
+    $items = stringArrayRemove({$set}, $lssl);
+    sets -rm $set $items;
+    return $items;
+}
+
+global proc string[] resetin(){
+
+    $lssl = `ls -sl`;
+    $set = $lssl[size($lssl)-1];
+    // $items = stringArrayRemove({$set}, $lssl);
+    sets -cl $set;
+    $items = setin();
+    return $items;
+}
+
+global proc sortSet(){
+
+    string $obj_set;
+ 
+    $lssl = `ls -sl -type objectSet`;
+    if (size($lssl))
+        $obj_set = $lssl[0];
+    
+    select -add $obj_set;
+    // return $obj_set;
+}
+
+global proc string[] getset(){
+
+    string $sel, $set;
+    string $objSets[];
+
+    $lssl = `ls -sl`;
+    for ($sel in $lssl){
+        $set = doGetSet($sel);
+        if ($set == "")
+            continue;
+        $objSets = stringArrayCatenate({$set}, $objSets);
+    }
+
+    return $objSets;
+
+}
+
+global proc string doGetSet(string $node){
+
+    string $objSet;
+
+    $ls_set = `listConnections -s 0 -d 1 -type "objectSet" ($node + ".msg")`;
+    if (size($ls_set)){
+        $objSet = $ls_set[0];
+    }
+
+    return $objSet;
+
+}
+
+global proc int setinsect(string $lssl[]){
+
+    // use two selected sets (select -ne <setA> <setB>)
+    // A comps will be retained in B comps
+    //   other comps will in B will be removed
+    // Mgrating comps from setA will not purge setB
+
+    if (!size($lssl))
+        $lssl  = `ls -sl -type "objectSet"`;
+
+    if (size($lssl) != 2){
+        return 0;
+    }
+
+    string $removeItems[] = `sets -sub $lssl[1] $lssl[0]`;
+
+    sets -rm $lssl[1] $removeItems;
+
+    return (size($removeItems));
+}
+
+global proc dupset(){
+    $lssl = `ls -sl -set`;
+    for ($set in $lssl){
+        $items = `sets -q $set`;
+        sets -n $set $items;
+    }
+}

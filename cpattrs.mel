@@ -1,8 +1,11 @@
+//v0.1a -new- cpselattrsto()
 //v0.1 codefix
 
 // last select is source
 //      targets shapes will be matched by src's types
 
+// dependencies
+// - /a-vfx/studio/users/barginbayev/home/maya/scripts/copyshapes.mel
 source lscb;
 
 global proc cpattrs_(){
@@ -37,14 +40,14 @@ global proc cpattrs_(){
 }
 
 
-global proc string[] cpattrs(string $trg, int $ispxy){
+global proc string[] cpattrs(string $trg, string $plgs[], int $ispxy){
 
-    $lssl = `ls -sl`;
-    $lscb = `lscb`;
+    if (!size($plgs))
+        $plgs = `lscb`;
 
     string $result[];
     int $r;
-    for ($plg in $lscb)
+    for ($plg in $plgs)
         $result[$r++] = doCopyAttrs($plg, $trg, $ispxy);
 
     return $result;
@@ -73,7 +76,7 @@ global proc string doCopyAttrs(string $srcPlg, string $trg, int $isPxy){
         -s $attr 
         -s $iskey 
         -s $ishid 
-        "addAttr -at ^1s -ln ^2s -sn ^3s -k ^4s -h ^5s"`;
+        "addAttr -at \"^1s\" -ln \"^2s\" -sn \"^3s\" -k ^4s -h ^5s"`;
     if ($atype == "enum"){
         $enums = attributeQuery("-le", "-n",
                                 plugNode($srcPlg), plugAttr($srcPlg));
@@ -96,4 +99,98 @@ global proc string doCopyAttrs(string $srcPlg, string $trg, int $isPxy){
     if (!$isPxy)
         connectAttr -f $trgPlg $srcPlg;
     return $trgPlg;
+}
+
+// global proc cpselattrs(string $kwargs[]){
+global proc cpselattrs(string $kwargs){
+    // usage
+    // >> cpselattrs "-ksc -ic";
+    string $args[] = stringToStringArray($kwargs, " ");
+    string $keys[], $vals[];
+    string $py_dict_upd;
+    int $i;
+    print $args;
+    python("cp_dict = {}");
+    for ($arg in $args){
+        $k = `match "[^-][a-zA-Z]+" $arg`;
+        $v = "True";
+        $keys[$i] = $k;
+        $vals[$i++] = $v;
+        $py_dict_upd = `format -s $k -s $v "cp_dict.update({\"^1s\":^2s})"`;
+        python($py_dict_upd);
+        python("print \">\", cp_dict");
+    }
+    python( "cp_dict.update({\"at\":[]})" );
+    for ($plg in `lscb`){
+        $at = plugAttr($plg);
+        $k = "at";
+        $v = $at;
+        $py_dict_upd = `format -s $at "cp_dict[\"at\"].append(\"^1s\")"`;
+        print {$py_dict_upd};
+        python ($py_dict_upd);
+    }
+    print{"import maya.cmds as cm;cm.copyAttr(**cp_dict)"};
+    python( "import maya.cmds as cm;cm.copyAttr(**cp_dict)" );
+}
+
+global proc cpattrsto(){
+    // move connectinos from source to target
+    
+    // usage: select node(s): child, source and target
+    $lssl = `ls -sl`;
+    doCopyAttrsTo $lssl[0] $lssl[1] $lssl[2];
+}
+
+global proc int doCopyAttrsTo(string $sel, string $src, string $trg){
+    // reconnects existing source plugs to $trg 
+    //   (attributes on targets should exist)
+    // usage: select node(s): child, source and target
+    //   >>: doCopyAttrsTo <child> <source> <target>;
+    // return: number of erros
+    string $inplgs[], $outplgs[];
+    $plugs = `getPlugsFromSource $sel $src`;
+    for ($i=0, $j=0; $i<size($plugs); $i+=2){
+        $inplgs[$j] = $plugs[$i];
+        $outplgs[$j++] = $plugs[$i+1];
+    }
+    $newplgs = stringArraySubstitute($src, $outplgs, $trg);
+    int $err = 0;
+    for ($i=0; $i<size($newplgs); $i++){
+        $oplg = $newplgs[$i];
+        $iplg = $inplgs[$i];
+        // print {(string)`format -s $oplg -s $iplg "^1s >> ^2s"`};
+        $res = catchQuiet(`connectAttr -f $oplg $iplg`);
+        if ($res)
+            $err++;
+    }
+    return $err;
+}
+
+global proc string[] getPlugsFromSource(string $sel, string $src){
+    $ls_con = `listConnections -s 1 -d 0 -c 1 -p 1 $sel`;
+    string $inps[];
+    for ($i=0, $j=0; $i<size($ls_con); $i+=2){
+        $plgA = $ls_con[$i+1];
+        $plgB = $ls_con[$i];
+        if (plugNode($plgA) == $src){
+            $inps[$j++] = $plgB;
+            $inps[$j++] = $plgA;
+        }
+    }
+    print $inps;
+    return $inps;
+}
+
+global proc _tmp_cpSelAttrs(string $sel, string $src){
+    string $inplgs[] = `lscb`;
+    string $outplgs[];
+    if (!size($inplgs)){
+        $plugs = `getPlugsFromSource $sel $src`;
+        for ($i=0, $j=0; $i<size($plugs); $i+=2){
+            $inplgs[$j] = $plugs[$i];
+            $outplgs[$j++] = $plugs[$i+1];
+        }
+    }
+    else
+        $outplgs = `listConnections -s 1 -d 0 -p 1 $inplgs`;
 }

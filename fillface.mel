@@ -1,0 +1,85 @@
+//v0.0
+// selects inner part of selected border
+
+// Usage: select face borders and last face at inner area
+// (track prder selection must be enabled, otherwise
+//  this module will do that)
+
+global proc string[] fillface(){
+    $TMR = `timerX`;
+    // check selection order option
+    if (!`selectPref -q -tso`){
+        enableTSO();
+        promptTSO();
+        return {};
+    }
+    string $init_outer[] = `ls -os -fl -type float3`;
+    $sz = size($init_outer);
+    if (!$sz)
+        return {};
+    string $ls_inner[] = {$init_outer[$sz-1]};
+    stringArrayRemoveAtIndex($sz-1, $init_outer);
+    $ls_outer = ls(
+        "-fl", 
+        `polyListComponentConversion 
+            -ff -fe -fuv -fvf -tv $init_outer`
+    );
+
+    // get max comp sz
+    $f_sz = `getAttr -s (plugNode($ls_outer[0]) + ".face")`;
+    string $myIntersector = `stringArrayIntersector`;
+    $ls_inner = `polyListComponentConversion 
+        -ff -fe -fuv -fvf -tv $ls_inner`;
+    
+    int $sz_d, $i;
+    string $cur_inner[];
+    while($i < $f_sz){
+        // print {$i};
+        select $ls_inner;
+        polySelectConstraint -pp 1 -t 0x0001;
+        $cur_inner = `ls -fl -sl -type float3`;
+        stringArrayIntersector 
+            -edit
+            -intersect 
+            $ls_outer $myIntersector;
+        stringArrayIntersector 
+            -edit
+            -intersect 
+            $cur_inner $myIntersector;
+        $delta = `stringArrayIntersector -query $myIntersector`;
+        $ls_inner = stringArrayRemove($delta, $cur_inner);
+        $cur_sz_d = size($delta);
+        if ($cur_sz_d){
+            if ($cur_sz_d == $sz_d)
+                break;
+            $sz_d = $cur_sz_d;
+        }
+        // reset intersector
+        stringArrayIntersector -edit -reset $myIntersector;
+        $i++;
+    }
+    deleteUI $myIntersector;
+    // to face
+    $ls_inner = ls(
+        "-fl",
+        `polyListComponentConversion
+            -fv -fe -fuv -fvf -tf -in $cur_inner`
+    );
+    $ls_inner = stringArrayRemove($init_outer, $ls_inner);
+    print {" <TMR:" + ($TMR - `timerX`) + ">"};
+    select $ls_inner;
+    return $ls_inner;
+}
+
+// select $ls_inner
+global proc enableTSO(){
+    // enable track selection order
+    selectPref -tso 1;
+}
+global proc promptTSO(){
+    confirmDialog -m (
+    "Track Selection Order is enabled.\n"
+    + "Reselect last polyface\n"
+    + "and try again"
+    );
+}

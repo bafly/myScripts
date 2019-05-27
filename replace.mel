@@ -1,0 +1,127 @@
+//v0.1b -new-  mkEmptyShp(), doReplaceShp(), repshp()
+//      -upd-  doReplace()
+//v0.1a -new-  doReplace
+//v0.1
+
+source inmesh;
+
+global proc replace(){
+    // select paired objects, eg(A1, B1, A2, B2, etc), by default replaceing shapes 
+    //  from A to B and renameing B as A
+    python("import replace");
+    python("replace.repshp(rename=1)");
+}
+
+global proc _replace(int $xlast){
+
+    $lssl = `ls -sl`;
+    if (size($lssl) == 2){
+        doReplaceTrf $lssl[0] $lssl[1] $xlast 1;
+    }
+}
+
+global proc repshp(){
+    //  works by pairs pairs(even, odd) eg: (0, 1), (2, 3) etc..
+    $lssl = `ls -sl`;
+    for ($i=0; $i<size($lssl); $i+=2){
+        $src = $lssl[$i];
+        $trg = $lssl[$i+1];
+        doReplaceShp $lssl[0] $lssl[1] 0;
+    }
+}
+
+global proc doReplaceTrf(
+        string $A, string $B,
+        int $xB, int $savePos){
+    // sel1 / sel2 / delete sel2 / relative position(parent -r)
+    string $a_par[] = `listRelatives -p -f $A`;
+    string $b_par[] = `listRelatives -p -f $B`;
+    // $a_chld = `listRelatives -c -f $A`;
+    // $b_chld = `listRelatives -c -f $B`;
+    if ($savePos)
+        copyAttr -v -at tx -at ty -at tz
+                    -at rx -at ry -at rz
+                     $B $A;
+    print {"B: " + $B};
+    if ($xB)
+        delete $B;
+    if ($savePos)
+        parent -r $A $b_par;
+    else{
+        print {$A, $b_par[0]};
+        parent $A $b_par[0];
+    }
+}
+
+// replace shape
+// WIP
+global proc string[] doReplaceShp(
+        string $A, string $B, int $xB){
+    // cleaner than in/out mesh
+    // get shps from source A and parent to B
+    // sel1 / sel2 / delete sel2 / relative position(parent -r)
+    string $a_shps[] = `listRelatives -s -f $A`;
+    string $b_shps[] = `listRelatives -s -f $B`;
+    string $items[];
+    $sz_bs = size($b_shps);
+    print {"B: " + $B};
+    if ($xB)
+        delete $b_shps;
+    for ($i=0, $j=0; $i<size($a_shps); $i++){
+        if ($i >= $sz_bs)
+            break;
+        $src = $a_shps[$i];
+        $src_dup = `duplicate -rr $src`;
+        $repar = `parent -r -s $src $B`;
+        $items[$j++] = $repar[0];
+    }
+    return $items;
+}
+
+global proc int doReplace(
+        string $lssl[],
+        string $fnd, string $rep,
+        int $operation){
+    // operation - 0 - replace, 1 - inmesh, 2 - replace shapes
+    // returns 0 on success, int on number of failed items
+    // ! transforms must be at init pose (0-frame(c) a-vfx)
+    string $sel, $bn;
+    int $err;
+    for ($sel in $lssl){
+        $res = substitute($fnd, `match "[^|]+$" $sel`, $rep);
+        if (!`objExists $res`){
+            print {" !" + $res};
+            $err++;
+            continue;
+        }
+        if (`objExists $res`)
+            switch ($operation){
+                case 0:
+                    // sel1 / sel2 / delete sel2 / relative position(parent -r)
+                    doReplaceTrf $sel $res 1 0;
+                    break;
+                case 1:
+                    doInMesh $sel $res 1;
+                    break;
+                case 2:
+                    doReplaceShp $sel $res 1;
+                    break;
+                default:
+                    break;
+            }
+    }
+    if (!$err)
+        print " All items found and replaced\n";
+    return $err;
+    // doInMesh $sel $bn 1;
+}
+
+global proc mkEmptyShp(string $shp_type, string $trfr){
+    $shp_nm = $trfr + "Shape";
+    string $eval_cmd = `format -s $shp_type 
+                               -s $shp_nm
+                               -s $trfr
+                               "createNode -n \"^2s\" -p \"^3s\" \"^1s\""`;
+    // print{$eval_cmd};
+    evalEcho($eval_cmd);
+}

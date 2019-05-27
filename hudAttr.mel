@@ -1,0 +1,157 @@
+// based on autodesk example for hudSlider
+// creates hud sliders for moving objects without selecting them
+//
+
+// usage(using 5th slots all first 4 blocks, by default):
+//      select any objects and attributes in cb and run:
+//          > hudAttr();
+//      
+//      to reset (button with initial value) - press button
+//      to delete all sliders - selecto nothing and run again
+//      ! transformation edits not sotre in undo pool
+
+// TODO:
+//      - bug: after block ove, old blocks not deletes
+//      - connect to realtime slider
+//      - eqw() - two args: first weight second equalization
+//             e.g > eqw 0.4 0.8 => first infl will be 0.3 second 0.1
+//      - names of controls for multiple controls
+//      - button for selecting that control later
+//      - setValueSlider: array with default values as arg
+//        for multiple dags
+//      - multitoggling slider buttons for stepping values 
+//
+
+// (c) rigga from home-pc, flexile.rigging@gmail.com
+
+global int $gHUDAttrIDS[];
+
+global proc int[] hudAttr(){
+
+    global int $gHUDAttrIDs[];
+
+    int $hud_id;
+    float $dv;    // hud sliders counter
+    int $l = 15;    // hud sliders limit
+    int $s = 5;    // hud slider sectoin
+    int $b = 0;        // hud slider block slot. maybe $h == $b
+    int $p;         // counter for plugs
+    int $hud_ids[];
+    int $sdr_min = -140;
+    int $sdr_max = 140;
+   
+    string $huds[];     // names of new sliders
+    string $plugs[];    // node.attr array
+    string $lssl[] = `ls -sl`;
+    
+    if (!size($lssl)){
+        $hud_sz = size($gHUDAttrIDs);
+        if ($hud_sz){
+            for ($id in $gHUDAttrIDs)
+                headsUpDisplay -rid $id;
+            print (`format -s $hud_sz "\n  <i>  HUDs removed: ^1s\n"`);
+        }
+    }
+    else{
+        
+        $lscb = `channelBox -q -sma mainChannelBox`;
+        for ($at in $lscb){
+            
+            $plugs = {};
+            $p = 0;
+            for ($sl in $lssl){
+                
+                if ($b > $l){
+                    print "\n  <!>  Reached limit of HUD block size\n";
+                    break;
+                }
+                if (!`objectType -isa "transform" $sl`){
+                    print (`format -s $sl "\n  <i>  Wrong dag type ^1s\n"`);
+                    continue;
+                }
+                
+                $plug = $sl+"."+$at;
+                $plugs[$p++] = $plug;
+                // no need to create named slider, but.. just let it be
+                //print $hud;
+                
+            }
+            if (!size($plugs)){
+                print (`format -s $at "\n  <i>  No appropriate nodes found for: ^1s\n"`);
+                continue;
+            }
+            print ("\n  plug: " + $plugs[0] + ":\n");
+            $dv = `getAttr $plugs[0]`;
+            $hud = `format -s $at -s (++$b) "hudSlider^1sBtn^2s"`;
+            // remove ahead
+            headsUpDisplay -e -rp $s $b;
+            //$sdr_min = $dv - 90;
+            //$sdr_max = $dv + 90;
+            $hud_id = hudSliderButton(
+                "-s", $s,
+                "-b", $b,
+                "-sl", $at,
+                "-t", "float",
+                "-min", $sdr_min,
+                "-max", $sdr_max,
+                "-v", 0,
+                "-slw", 14,
+                "-vw", 15,
+                "-sln", 100,
+                "-si", 0.1,
+                "-dp", 2,
+                "-bl", $dv,
+                "-bw", 16,
+                //"-bsh", "roundRectangle",
+                "-bsh", "rectangle",
+                $hud
+            );
+            $huds[$b-1] = $hud;
+            $hud_ids[$b-1] = $hud_id;
+            $plugs_s = stringArrayToString($plugs, "\", \"");
+            $cmd = "setValueSlider(\"^1s\", {\"^2s\"}, ^3s);";
+            $rst_cmd = "hudSliderButton -e -v ^4s ^1s;"+$cmd;
+            print ("  cmd: " + $cmd + "\n");
+            print ($plugs_s + "\n");
+            hudSliderButton -e
+                      -brc `format -s $hud -s $plugs_s -s $dv -s 0 $rst_cmd`
+                      -spc `format -s $hud -s $plugs_s -s $dv $cmd`
+                      -sdc `format -s $hud -s $plugs_s -s $dv $cmd`
+                      -src `format -s $hud -s $plugs_s -s $dv $cmd`
+                      $hud
+            ;
+        }
+    }
+    //return $b;
+    //print "\n";
+    //print $b;
+    $gHUDAttrIDs = $hud_ids;
+    return $hud_ids;
+}
+
+// modified exmaple from autodesk
+global proc setValueSlider( string $HUD, string $dags[], float $dv )
+{
+    // Since undo is not turned off automatically, we must
+    // do it ourselves. The HUD will fire off many calls to this
+    // procedure during a drag so we don't want to flood the undo
+    // queue.
+    //
+    //float $value = $HUD == "" ? $dv : `hudSliderButton -q -v $HUD`;
+    float $value = `hudSliderButton -q -v $HUD`;
+    
+    //print (`format -s $HUD "  HUD: ^1s\n"`);
+    undoInfo -swf false;
+    int $numItems = size($dags);
+    for( $i = 0; $i < $numItems; $i++ )
+    {
+            string $plug = $dags[$i];
+            if( `objectType -isAType "transform" $plug` ){
+                //print ("  plg: " + $plug + "\n");
+                setAttr $plug ($dv + $value);
+            }
+    }
+    // Re-enable the undo queue.
+    //
+    undoInfo -swf true;
+}

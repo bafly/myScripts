@@ -1,0 +1,194 @@
+// v0.1a upd   recreateShape << duplicateShape
+//       new   duplicateShape - true shape duplicating by transform
+//  last selected must be shape if transform has more
+//      child shapes
+
+source cpattrs;
+
+global proc shaperep(){
+    
+    string $lssl[] = `ls -sl`;
+    string $src = $lssl[size($lssl)-1];
+    string $trgts[] = stringArrayRemoveExact({$src}, $lssl);
+    
+    for ($sel in $trgts)
+        doShapeRep($src, $sel, 0);
+
+    delete $src;
+}
+// trargets-ctrls
+
+global proc string[] copyshapes_(string $stype){
+    
+    // $stype, which type of shape to copy
+    string $ls_ctrl[], $ls_shp[];
+    string $lssl[] = `ls -sl`;
+    string $src = $lssl[size($lssl)-1];
+    string $ls_src_shp[] = `objectType -isa "transform" $src`
+                                ? `listRelatives -s -ni $src`
+                                : {$src};
+    string $trgts[] = stringArrayRemoveExact({$src}, $lssl);
+    string $reparent[];
+    int $r;
+    for ($ct in $trgts){
+        int $s = 0;
+        for ($sh in $ls_src_shp){
+            if ($stype != "" && !`objectType -i $stype $sh`)
+                continue;
+            $shname = $ct + "Shape";
+            if ($s)
+                $shname += "#";
+            string $shp = recreateShape($sh, $shname, $ct);
+            $reparent[$r++] = $shp;
+            // $reparent = {$shp};
+            doCopyAttrs($sh, $shp, 0);
+            $s++;
+        }
+        print $reparent;
+    }
+    select $lssl;
+    return $reparent;
+}
+
+global proc string[] duplicateShape(
+    string $src, 
+    string $trg
+){
+
+    // copy all shapes from source into target
+    // ! can't use duplicate on exact shape - it duplicates
+    //   it's parent with all shapes in it
+    // delete `listRelatives -s -f $trg`;
+    string $reparent[];
+    $dup_src = `duplicate -rc $src`;
+    $src_shps = `listRelatives -s -f $dup_src[0]`;
+    $cch_paint = catchQuiet(copyStyle($src, $dup_src));
+    if ($cch_paint){
+        print {" ! Draw properties copying is failed:"};
+        print `format -s $src -s $dup_src ":: ^1s >> ^2s\n"`;
+    }
+    string $new_shps[];
+    int $s;
+    //$shp = $src_shps[0]
+    for ($shp in $src_shps){
+        $bn = `match "[^|]+$" $trg`;
+        $name = $s ? ($bn + "Shape#") : ($bn + "Shape");
+        $reparent = `parent -r -s $shp $trg`;
+        $new_shp = `rename $reparent[0] $name`;
+        $new_shp = `format -s $trg -s $new_shp "^1s|^2s"`;
+        $new_shps[$s++] = $new_shp;
+    }
+    delete $dup_src;
+    return $new_shps;
+}
+
+global proc int copyStyle(string $A, string $B){
+    
+    int $res = 0;
+    $A_shps = `listRelatives -s -f $A`;
+    $B_shps = `listRelatives -s -f $B`;
+    int $s;
+    for ($a_shp in $A_shps){
+        $b_shp = $B_shps[$s++];
+        $cur_res = catchQuiet(copyShapeStyle($a_shp, $b_shp));
+        if ($cur_res)
+            $res = $cur_res;
+    }
+    copyShapeStyle($A, $B);
+    return $res;
+}
+global proc int copyShapeStyle(string $A, string $B){
+
+    // colors and linewidth from A to B
+    // returns: 0 - if all attributes are found and copied
+    //          1 - if at least one fail during loop
+    $shp_attrs = {
+        "lineWidth",
+        "overrideEnabled",
+        "overrideRGBColors",
+        "overrideColorR",
+        "overrideColorG",
+        "overrideColorB",
+        "overrideColor"
+    };
+    if (`objectType -i "transform" $A`)
+        $shp_attrs = stringArrayRemoveExact({"lineWidth"}, $shp_attrs);
+    print {" Copying attributes values"};
+    print $shp_attrs;
+    
+    int $res = 0;
+    for ($at in $shp_attrs){
+        $a_plg = $A + "." + $at;
+        $b_plg = $B + "." + $at;
+        if (!`objExists $a_plg` && `objExists $a_plg`){
+            print `format -s $a_plg 
+                          -s $b_plg
+                          " ! One of these not exists ^1s || ^2s\n"`;
+            continue;
+            $res = 1;
+        }
+        print {$a_plg};
+        // $res = catchQuiet(`eval $cmd`);
+        $cur_res = catchQuiet(setAttr($b_plg, `getAttr $a_plg`));
+        // cb state
+        // $cb = `getAttr -cb $a_plg`;
+        if ($cur_res){
+            print {"O_o"};
+            $res = $cur_res;
+        }
+    }
+    return $res;
+}
+global proc string recreateShape(
+    string $shp, 
+    string $name, 
+    string $tr
+){
+
+    // "shp", "name"+Shape, "parent transform"
+
+    $ntype = `objectType $shp`;
+    $name = $name == "" ? ($tr + "Shape#") : $name;
+    string $cmd = `format 
+        -s $name 
+        -s $ntype 
+        -s $tr 
+        "createNode -n \"^1s\" -p ^3s ^2s"`;
+    print $cmd;
+    string $res = eval($cmd);
+    if ($ntype == "nurbsCurve"){
+        connectAttr -f ($shp + ".ws") ($res + ".cr");
+        print ("\n$res:" + $res + "\n");
+    }
+    $cch_paint = catchQuiet(copyStyle($shp, $res));
+    if ($cch_paint){
+        print {" ! Draw properties copying is failed:\n"};
+        print `fornat -s $shp -s $res ":: ^1s >> ^2s\n"`;
+    }
+    return (`format -s $tr -s $res "^1s|^2s"`);
+}
+
+global proc string[] doShapeRep(
+    string $ctrl, 
+    string $trg,
+    int $deltf
+){
+    
+    //string $ls_ctrl[], $ls_shp[];
+    //string $lssl[] = `ls -sl`;
+    //string $src = $lssl[size($lssl)-1];
+    string $ls_shps[] = `listRelatives -s -type nurbsCurve $ctrl`;
+    string $items[];
+    int $i;
+    for ($sh in $ls_shps){
+        //$ls_ctrl = `circle -ch 0 -nr 1 0 0`;
+        //$ls_shp = `listRelatives -s $ls_ctrl`;
+        $reparent = `parent -r -s $sh $trg`;
+        $sh = `rename $reparent[0] ($trg + "Shape#")`;
+        print $sh;
+        $items[$i++] = $sh;
+    }
+    if ($deltf)
+        delete $ctrl;
+    return $items;
+}

@@ -1,5 +1,3 @@
-// dependencies
-// ! doSnap > mkctrls.mel
 // snap
 proc string getPairByNS(string $node){
 
@@ -97,4 +95,6 @@ global proc doSnap(string $trg, string $src,
             xform -ws -ro ($rot.x) ($rot.y) ($rot.z) $src;
         }
     }
+
+
 }

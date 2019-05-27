@@ -1,0 +1,18 @@
+global proc mirpairs(){
+    string $lssl[] = `ls -os -fl`;
+    print {"Mirroring :"};
+    for ($i=0; $i<size($lssl); $i+=2){
+        print {$lssl[$i+1]};
+        print {$lssl[$i] + ">>" + $lssl[$i+1]};
+        doMir $lssl[$i] $lssl[$i+1];
+    }
+}
+
+
+global proc float[] doMir(string $src, string $trg){
+    vector $vec;
+    float $pos[] = `xform -q -ws -t $src`;
+    $pos[0] *= -1;
+    xform -ws -t $pos[0] $pos[1] $pos[2] $trg;
+    return $pos;
+}

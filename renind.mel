@@ -1,0 +1,49 @@
+global proc string doRenIdxAtPos(string $sel, int $idx, int $pos){
+    
+    $bname = `match "[^|]+$" $sel`;
+    $spl_chld = `stringToStringArray $bname "_"`;
+    $spl_chld[$pos] = `match "[^0-9]+" $spl_chld[$pos]` + $idx;
+    $nn = stringArrayToString($spl_chld, "_");
+    // print $spl_chld;
+    // print "\n";
+    string $ren = `rename $sel $nn`;
+    return $ren;
+}
+global proc string[] renidx(int $idx, int $pos){
+    
+    string $items[];
+    int $i;
+    string $lssl[] = `ls -sl`;
+    //$sel = $lssl[0];
+    for ($sel in $lssl){
+        $spl = `stringToStringArray $sel "_"`;
+        // get pos
+        int $cur_idx;
+        if ($pos < 0){
+            for ($s=0; $s<size($spl); $s++){
+                $sp = $spl[$s];
+                $cur_idx = `match "[0-9]+" $sp`;
+                if ($cur_idx){
+                    $pos = $s;
+                    break;
+                }
+            }
+            if ($pos<0)
+                $pos = size($spl)-1;
+        }
+        // get idx
+        if (!$idx){
+            if (!$cur_idx)
+                $cur_idx = `match "[0-9]+" $spl[$pos]`;
+            $idx = $cur_idx ? $cur_idx : $cur_idx + 1;
+                
+        }
+        
+        $chlds = `ls -dag -tr $sel`;
+        for ($c=size($chlds)-1; $c>0; $c--){
+            $chld = $chlds[$c];
+            $items[$i++] = doRenIdxAtPos($chld, $idx, $pos);
+        }
+    }
+    return $items;
+}

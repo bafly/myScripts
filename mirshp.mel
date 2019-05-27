@@ -1,0 +1,36 @@
+// Copies to select right side (<any>_R12_<any>)
+//  shapes from found left side
+// Args:
+//  - $x,$y,$z = flip axis - true if need to flip at this axis
+
+// python("import mirshps");
+source otherside;
+
+global proc mirshp(int $x, int $y, int $z){
+
+    $lssl = `ls -sl`;
+    // $i=0;$sel = $lssl[$i++];
+    if (size($lssl) == 2)
+        doMirrorShapes $lssl[0] $lssl[1] {$x, $y, $z};
+    // for ($sel in $lssl){
+    //     $o_side = doGetOtherSide($sel, "R", "L");
+    //     if ($o_side == "")
+    //         continue;
+    //     doMirrorShapes $o_side $sel {$x, $y, $z};
+    // }
+}
+
+global proc doMirrorShapes(string $a, string $b, int $flip[]){
+    python("import mirshps");
+    // using shapes
+    vector $pos = $flip;
+    print {$pos};
+    python(`format
+        -s $a
+        -s $b
+        -s $flip[0]
+        -s $flip[1]
+        -s $flip[2]
+        "mirshps.doIt(\"^1s\", \"^2s\", (^3s, ^4s, ^5s))"`);
+
+}

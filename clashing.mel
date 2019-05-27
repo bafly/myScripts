@@ -1,0 +1,281 @@
+// v0.1c    new:  fixTransformNames()
+// v0.1b    new:  fixSGNames()
+// v0.1a
+
+// select or nothing to add [Shape] postfix to all shapes' names under transforms
+
+global proc clashing(){
+    
+    select(getClashing());
+}
+
+global proc clashIt(string $lssl[]){
+
+    // string $lssl[] = `ls -sl`;
+    select -cl;
+    for ($sel in $lssl)
+        if (`gmatch $sel "*|*"`){
+            $bname = `match "[^|]+$" $sel`;
+            select -add $sel;
+        }
+
+}
+
+global proc string[] getClashing(){
+    
+    string $clashing[];
+    $c=0;
+    $ls_tr = `ls -dag -tr -sl`;
+    if (!size($ls_tr))
+        $ls_tr = `ls -tr`;
+
+    for ($cl in $ls_tr){
+        if (gmatch(string($cl), "*|*"))
+            $clashing[$c++] = $cl;
+    }
+    $tr_sz = size($clashing);
+    
+    $ls_shps = `ls -dag -s -sl`;
+
+    for ($cl in $ls_shps)
+        if (gmatch(string($cl), "*|*"))
+            $clashing[$c++] = $cl;
+    
+    $shp_sz = size($clashing) - $tr_sz;
+    print(`format -s $tr_sz "  Transforms: ^1s\n"`);
+    print(`format -s $shp_sz "  Shapes: ^1s\n"`);
+
+    return $clashing;
+}
+
+global proc fixioshapes(string $lssl[]){
+
+    $sfx = "ShapeOrig";
+    if (!size($lssl))
+        $lssl = listRelatives("-f", "-p", `ls -dag -s -ni -sl`);
+    for ($sel in $lssl){
+        $ios = `getIOShapes $sel`;
+        doFixShapeNames $ios $sfx -1;
+    }
+}
+
+global proc string[] getIOShapes(string $sel){
+    
+    $ls_all = `listRelatives -f -s $sel`;
+    string $items[];
+    int $i;
+    for ($it in $ls_all)
+        if (`getAttr ($it + ".io")`)
+            $items[$i] = $it;
+    return $items;
+}
+
+global proc string[] doFixShapeNames(string $shps[], string $sfx, int $reorder){
+    
+    string $items[];
+    if (!size(`ls $shps`))
+        return {};
+    string $par[] = `listRelatives -f -p $shps[0]`;
+    $bname = `match "[^|]+$" $par[0]`;
+    int $s = size($shps);
+    $goodname = $bname + $sfx;
+    //$shp = $shps[0]
+    for ($i=$s-1; $i>=0; $i--){
+        $shp = $shps[$i];
+        // check if reference
+        if (`referenceQuery -inr $shp`)
+            continue;
+        $newn = $goodname;
+        if ($reorder){
+            if ($reorder > 0)
+                reorder -f $shp;
+            else
+                reorder -b $shp;
+        }
+        print {$shp};
+        // current shape's name
+        $shp_bname = `match "[^|]+$" $shp`;
+        if ($i)
+            $newn += (string)$i;
+        if ($shp_bname != $newn){
+            print (`format 
+                -s $shp_bname 
+                -s $newn 
+                -s $s
+                ":: <!>  Attansion: ^1s >> ^2s {^3s}\n"`);
+            // print("new name: " + $newn + "\n");
+            $res = `rename $shp $newn`;
+            $items[size($items)] = $res;
+        }
+        $s--;
+    }
+    return $items;
+}
+
+global proc string[] fixShapeNames(){
+
+    string $shp;
+    string $items[];
+    $msg = "\n ::fixing names: shapes: ";
+    $sfx = "Shape";
+    string $ls_tr[] = `ls -dag -tr -sl`;
+    if (!size($ls_tr)){
+
+        $msg += "All\n";
+        $ls_tr = `ls -tr`;
+    }
+    else
+        $msg += "Selected items\n";
+    print $msg;
+    // $sel = $ls_tr[0]
+    for ($sel in $ls_tr){
+        $sel_bname = `match "[^|]+$" $sel`;
+        $ls_shps = `listRelatives -ni -f -s $sel`;
+        if (!size($ls_shps))
+            continue;
+        string $fixed[] = `doFixShapeNames $ls_shps $sfx 1`;
+        $items = stringArrayCatenate($fixed, $items);
+    }
+    return $items;
+}
+proc fix(){
+    
+    $lssl = `ls -s`;
+    string $shp;
+
+    for ($shp in $lssl){
+
+        if (!`gmatch $shp "*|*"`)
+            continue;
+
+        print ($shp + "\n");
+        $par = `listRelatives -p $shp`;
+        rename $shp ($par[0] + "Shape");
+        print "A\n";
+    }
+
+}
+
+global proc string[] selunic(){
+    
+    $lssl = `ls -sl`;
+    if (size($lssl) == 1)
+        $lssl = `ls -dag -tr $lssl`;
+
+    $res = doSelUnic($lssl);
+    select $res;
+    return $res;
+}
+
+global proc string[] doSelUnic(string $lssl[]){
+
+    string $sel;
+    string $unic[];
+    int $u;
+
+    for($sel in $lssl){
+        
+        if (gmatch($sel, "*:*")){
+
+            $msel = `match ":[^:]+$" $sel`;
+            $ls_sel = `ls -r 1 ("*"+$msel)`;
+            if (size($ls_sel) > 1)
+                continue;
+        }
+        if (gmatch($sel, "*|*"))
+            continue;
+        $unic[$u++] = $sel;
+    }
+    return $unic;
+
+}
+
+// fix contraint names
+global proc fixConstraintNames(string $lssl[]){
+    
+    if (!size($lssl)){
+        $lssl = `ls -sl -type constraint`;
+        if (!size($lssl))
+            $lssl = `ls -type constraint`;
+    }
+    else
+        $lssl = `ls -type constraint $lssl`;
+
+    string $ls_par[];
+    for ($sel in $lssl){
+        $ls_par = `listRelatives -f -p $sel`;
+        print $ls_par;
+        $bname = `match "[^|]+$" $ls_par[0]`;
+        print $bname;
+        $type = `objectType $sel`;
+        rename $sel ($bname + "_" + $type);
+    }
+}
+
+// fix shading engine sets' names (maternal+"SG")
+global proc string[] fixSGNames(){
+    
+    $all_sgs = `ls -type shadingEngine`;
+    string $items[];
+    int $i;
+    for ($sg in $all_sgs){
+        if (size(`ls -dn $sg`)){
+            print "defaultNode\n";
+            continue;
+        }
+        if (size(`ls -ro $sg`)){
+            print "ReadOnlyNode\n";
+            continue;
+        }
+        if (!endsWith($sg, "SG")||endsWith($sg, "sg"))
+            $items[$i++] = `rename $sg ($sg+"SG")`;
+    }
+    return $items;
+}
+
+global proc string[] getClashingTransforms(){
+
+    string $ls_tr[];
+    
+    $ls_root = `ls -sl`;
+    if (size($ls_root))
+        $ls_tr = `ls -dag -tr $ls_root`;
+    else
+        $ls_tr = `ls -tr`;
+
+    string $clashing[];
+    int $c;
+    for ($sel in $ls_tr){
+        if (`gmatch $sel "*|*"`)
+            $clashing[$c++] = $sel;
+    }
+    return $clashing;
+}
+
+global proc string[] fixTransformNames(){
+    string $sl_tr[] = getClashingTransforms();
+    int $idx, $cur_idx;
+    for ($sel in $sl_tr){
+        $m_cur_idx = `match "[0-9]+$" $sel`;
+        $cur_idx = $m_cur_idx == "" ? 1 : $m_cur_idx;
+        $bn = `match "[^|]+$" $sel`;
+        rename $sel ($bn + $cur_idx);
+    }
+    return {};
+}
+
+global proc int findNextIndex(string $bn, int $cur_idx){
+    int $max;
+    print "WIP";
+    int $next_idx = $cur_idx + 1;
+    string $new_n = $bn + $next_idx;
+    while(`objExists $new_n`){
+        if ($max > 10000)
+            return $next_idx;
+        
+        $next_idx++;
+        $new_n = $bn + $next_idx;
+        $max++;
+    }
+    return $next_idx;
+}

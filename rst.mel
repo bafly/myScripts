@@ -1,0 +1,254 @@
+//v0.1c new  rstjnts(): hard reset selected skinClusters
+//      upd  doReset(): shape reading fixed
+//v0.1b new  reskin(): hard reset selected skinClusters
+//      upd  resetSkin(): new args: hard reset
+//v0.1a fix  resetSkin(): extra influecs can append, 1 after reset
+//v0.1a upd  doResetComps (old resetcvs)
+// TODO bake
+
+proc string[] getJnts(string $object, string $sc){
+
+    // get jnts
+    if ($sc == "")
+        $sc = `findRelatedSkinCluster $object`;
+    
+    $items = `skinCluster -q -inf $sc`;
+    return $items;
+}
+
+proc resetSkin(string $object, string $sc, int $softReset){
+
+    if ($sc == "")
+        $sc = `findRelatedSkinCluster $object`;
+    if ($object == "")
+        if ($sc != "")
+            $object = `skinCluster -q -g $sc`;
+        else
+            return;
+    
+    // $jnts = getJnts($object, $sc);
+    $jnts = `skinCluster -q -inf $sc`;
+    if ($softReset)
+        evalDeferred(`format -s $object "skinCluster -e -ubk ^1s;"`);
+    else
+        evalDeferred(`format -s $object "skinCluster -e -ub ^1s;"`);
+
+    
+    //evalDeferred("undoInfo -cn \"SkinReset\" -ock;");
+    evalDeferred(
+        format(
+            "-s", stringArrayToString($jnts, " "), 
+            "-s", $object, 
+            "skinCluster -tsb ^1s ^2s;"
+        )
+    );
+    //evalDeferred("undoInfo -cn \"SkinReset\" -cck;");
+}
+
+global proc doRst(string $object){
+    
+    string $shp_type;
+    string $msg = "  >> ";
+    string $shps[] = {$object};
+    
+    print (`format -s $object "\n:::::: ^1s\n"`);
+    if (`objectType -isa "transform" $object`){
+        $ls_shps = `listRelatives -f -s -ni $object`;
+        if (size($ls_shps))
+            $shps = $ls_shps;
+        
+    }
+    
+    $otype = `objectType $shps[0]`;
+    $shp_type = $otype;
+
+    string $sc = `findRelatedSkinCluster $object`;
+    switch ($shp_type){
+
+        case "mesh":
+            if ($sc != ""){
+                $msg += "Skin Reset\n";
+                print $msg;
+                resetSkin($object, $sc, 1);
+            }
+            else{
+                print "::> reseting mesh points\n";
+                for ($shp in $shps)
+                    doResetComps $shp;
+            }
+            break;
+        case "nurbsCurve":
+            print "CURV!\n";
+            if ($sc != ""){
+                $msg += "Skin Reset\n";
+                print $msg;
+                resetSkin($object, $sc, 1);
+            }
+            else{
+                print "::> reseting curve points\n";
+                for ($shp in $shps)
+                    doResetComps $shp;
+            }
+            break;
+        case "joint":
+            print "Joint\n";
+            $msg += "Reset joints orientations\n";
+            print $msg;
+            rstjnts;
+            break;
+        default:
+            print (`format -s $otype "  Unexpected object type :: ^1s\n"`);
+            return;
+    }
+}
+
+
+// skin reset
+global proc rst(){
+
+
+    $lssl = `ls -sl`;
+    for ($sel in $lssl){
+        doRst($sel);
+    }
+    
+}
+
+//////////////////////////////dag pose/////////////////////////////////
+
+// setBindPose
+
+// TODO:
+//      get default values for user attributes
+//      enum attrs
+
+global proc setpose(){
+    $lssl = `ls -sl`;
+    for ($sel in $lssl){
+        doSetBindPose($sel);
+    }
+}
+
+
+global proc doSetBindPose(string $dagnode){
+    
+    int $CHECK_NONZERO;
+    int $d;
+    float $val;
+    string $datas[];
+    string $data;
+
+    $pose_at = "defaultPose";
+    $data_plg = $dagnode + "." + $pose_at;
+    $attrs = `listAttr -k $dagnode`;
+    
+    float $t[];
+    float $r[];
+    float $s[];
+    float $u[];
+    float $viz;
+
+    for ($at in $attrs){
+
+        $dv = $at == "visibility" || startsWith($at, "scale") ? 1 : 0;
+        $plg = $dagnode + "." + $at;
+        $val = `getAttr $plg`;
+        if ($val != $dv){
+            $CHECK_NONZERO = 1;
+            $dv = $val;
+        }
+        $datas[$d++] = `format -s $at -s $dv "\"^1s:^2s\""`;
+    }
+    if ($CHECK_NONZERO){
+        $data = "{" + stringArrayToString($datas, ", ") + "}";
+        if (!`attributeExists $pose_at $dagnode`)
+            addAttr -dt "string" -ln $pose_at -h 0 $dagnode;
+        setAttr -type "string" $data_plg $data;
+    }
+    else{
+        if (`attributeExists $pose_at $dagnode`)
+            deleteAttr $data_plg;
+    }
+    print $data;
+}
+
+global proc goBind(){
+
+    $lssl = `ls -sl`;
+    for($sel in $lssl)
+        doGoBind($sel);
+}
+global proc doGoBind(string $dagnode){
+
+    $pose_at = "defaultPose";
+    $data_plg = $dagnode + "." + $pose_at;
+
+    if (`attributeExists $pose_at $dagnode`){
+        $data = getAttr($data_plg);
+        $datas = eval("$datas = "+$data);
+        print $datas;
+        for ($dict in $datas){
+            $split_dict = stringToStringArray($dict, ":");
+            $at = $split_dict[0];
+            $val = float($split_dict[1]);
+            setAttr ($dagnode + "." + $at) $val;
+        }
+    }
+    else{
+        $attrs = `listAttr -k $dagnode`;
+        for ($at in $attrs){
+            $dv = $at == "visibility" || startsWith($at, "scale") ? 1 : 0;
+            setAttr ($dagnode + "." + $at) $dv;
+        }
+    }
+
+}
+
+global proc int doResetComps(string $sel){
+    // using shape
+    $typ = `objectType $sel`;
+    $cmp_typ = $typ == "mesh" ? "vtx" : "cp";
+    $cmps_typ = $typ == "mesh" ? "pnts" : "cp";
+    $cmps_sz = `getAttr -s ($sel + "." + $cmps_typ)`;
+    for ($i=0; $i<$cmps_sz; $i++){
+        $cmp = `format -s $sel -s $cmp_typ -s $i "^1s.^2s[^3s]"`;
+        setAttr $cmp 0 0 0;
+    }
+    return $cmps_sz;
+}
+
+global proc int rstcmps(){
+    //returns success results count
+    int $res;
+    $ls_shps = `ls -sl -s`;
+    $ls_shps = stringArrayCatenate($ls_shps, `listRelatives -f -s`);
+    // $sel = $ls_shps[0]
+    for ($shp in $ls_shps){
+        $CHK = catchQuiet(doResetComps($shp));
+        if (!$CHK)
+            $res += 1;
+    }
+    return $res;
+}
+
+global proc reskin(){
+
+    for ($sel in `ls -sl -type skinCluster`){
+        $g = `skinCluster -q -g $sel`;
+        $infs = `skinCluster -q -inf $sel`;
+        resetSkin $g[0] $sel 0; // 0 - hard reset - reset weights
+    }
+}
+
+global proc rstjnts(){
+    $lssl = `ls -sl -type joint`;
+
+    for ($sel in $lssl){
+        $dup = `duplicate -po -rr $sel`;
+        makeIdentity -a 1 $dup;
+        copyAttr -v -at r $dup $sel;
+        copyAttr -v -at jo $dup $sel;
+        delete $dup;
+    }
+    select $lssl;
+}

@@ -1,3 +1,4 @@
+//v0.1b     fix  gogbind(): all selected items moved to last items global pos
 //v0.1a     new  gogbind(): save/restore global poses
 // setBindPose
 
@@ -203,9 +204,9 @@ global proc doGoBind(string $dagnode, string $attrs[], int $global){
                 // print {$scl};
             }
             // set data
-            $try_pos =  catchQuiet(`xform -ws -t ($pos.x) ($pos.y) ($pos.z)`);
-            $try_rot =  catchQuiet(`xform -ws -ro ($rot.x) ($rot.y) ($rot.z)`);
-            $try_scl =  catchQuiet(`xform -ws -s ($scl.x) ($scl.y) ($scl.z)`);
+            $try_pos =  catchQuiet(`xform -ws -t ($pos.x) ($pos.y) ($pos.z) $dagnode`);
+            $try_rot =  catchQuiet(`xform -ws -ro ($rot.x) ($rot.y) ($rot.z) $dagnode`);
+            $try_scl =  catchQuiet(`xform -ws -s ($scl.x) ($scl.y) ($scl.z) $dagnode`);
             $failed = 0;
             for ($try in {$try_pos, $try_rot, $try_scl}){
                 if ($try)

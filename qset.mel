@@ -1,0 +1,90 @@
+// 
+global proc qsetA(){
+    global string $gQSet1[];
+    global string $gQSet0[];
+    string $msg = "qset A cretaed\n";
+    $lssl = `ls -sl -fl`;
+    if (!size($lssl)){
+        select $gQSet1;
+        return;
+    }
+    if (size($gQSet1)){
+        $gQSet0 = $gQSet1;
+        $msg += "qset B updated";
+    }
+    $gQSet1 = $lssl;
+    print $gQSet1;
+    headsUpMessage -vo -250 $msg;
+}
+
+
+// 
+global proc qsetB(){
+
+    global string $gQSet2[];
+    $lssl = `ls -sl -fl`;
+    if (!size($lssl)){
+        select $gQSet2;
+        return;
+    }
+    $gQSet2 = $lssl;
+    headsUpMessage -vo -250 "qset B cretaed";
+}
+
+
+// 
+global proc qsetExtB(){
+
+    global string $gQSet1[];
+    $lssl = `ls -sl -fl`;
+    if (size($lssl)){
+        $gQSet1 = stringArrayCatenate($lssl, $gQSet1);
+        headsUpMessage -vo -250 "qset extended";
+    }
+
+}
+
+// 
+global proc qsetSel(){
+
+    global string $gQSet1[];
+    if (size($gQSet1)){
+        select $gQSet1;
+        headsUpMessage -vo -250 "qset: A";
+    }
+}
+global proc qsetBSel(){
+    global string $gQSet2[];
+    if (size($gQSet2)){
+        select $gQSet2;
+        headsUpMessage -vo -250 "qset: B";
+    }
+}
+
+// 
+global proc qsetRm(){
+
+    global string $gQSet1[];
+    $lssl = `ls -sl -fl`;
+    if (size($lssl)){
+        $gQSet1 = stringArrayRemove($lssl, $gQSet1);
+        headsUpMessage -vo -250 "qset shrinked";
+    }
+}
+
+global proc qsetAdd(){
+    global string $gQSet1[];
+    $lssl = `ls -sl -fl`;
+    $gQSet1 = stringArrayCatenate($gQSet1, $lssl);
+    headsUpMessage -vo -250 "qset extended";
+}
+
+// 
+global proc qsetSelOld(){
+
+    global string $gQSet0[];
+    if (size($gQSet0)){
+        select $gQSet0;
+        headsUpMessage -vo -250 "qset: B";
+    }
+}

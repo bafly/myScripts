@@ -1,33 +1,47 @@
-global proc string crvit(int $connect){
+//v0.1a -upd- $deg argument
+
+global proc string crvit(int $deg, int $connect){
     // print
     $lssl = `ls -sl -tr`;
+    $crv = `docrvit $lssl $deg $connect`;
+    return $crv;
+}
+
+global proc string docrvit(string $lssl[], int $deg, int $con){
+    
+    $lssl = `ls -tr $lssl`;
+    if (!size($lssl))
+        return "";
     vector $v;
     vector $vecs[];
     int $i;
     for ($sel in $lssl)
         $vecs[$i++] = `xform -q -ws -rp $sel`;
     
-    $crv = doCurveIt($vecs);
-    if ($connect)
-        doPinCurvePoints($crv, lssl);
+    $crv = doCurveIt($vecs, $deg);
+    if ($con)
+        doPinCurvePoints($crv, $lssl);
     print $vecs;
     return $crv;
 }
 
-global proc string doCurveIt(vector $points[]){
+global proc string doCurveIt(vector $points[], int $deg){
     vector $v;
-    int $deg = 1;
+    if (!$deg)
+        $deg = 3;
+    $sz = size($points);
     string $base_cmd = `format -s $deg "curve -d ^1s"`;
     string $knot_cmd = "";
-    for ($i=0; $i<size($points); $i++){
+    for ($i=0; $i<$sz; $i++){
         $v = $points[$i];
         $x = $v.x;
         $y = $v.y;
         $z = $v.z;
         $base_cmd += `format -s $x -s $y -s $z " -p ^1s ^2s ^3s"`;
-        $knot_cmd += `format -s $i " -k ^1s"`;
+        // $knot_cmd += `format -s $i " -k ^1s"`;
     }
     $cmd = $base_cmd + $knot_cmd;
+    print {$cmd};
     string $crv = eval($cmd);
     return $crv;
 }

@@ -30,9 +30,10 @@ global proc repar(){
         }
         $ls_cur_par = `listRelatives -f -p $sel`;
         if (size($ls_cur_par)){
-            if ($ls_cur_par[0] == $par)
+            if ($ls_cur_par[0] == $par){
                 print {" already there: \n:" + $sel};
                 continue;
+            }
         }
         parent $sel $par;
     }

@@ -1,0 +1,33 @@
+//v0.1a -upd-   gvar name changed to sart with "_" so it could always be in front ofl thelist
+//              and check if it connected to camera
+//              if not exists last bookmark will be taken
+
+//TOD: compare bookmark to be linked to currnet camera
+
+global proc bookmyview(){
+    // book current view
+    global string $g_mybmrkview = "_myBookedViewA";
+    if (!`objExists $g_mybmrkview`)
+        cameraView -n $g_mybmrkview;
+    else
+        cameraView -e $g_mybmrkview;
+    $hmsg = `format -s $g_mybmrkview "View saved: ^1s"`;
+    headsUpMessage $hmsg;
+}
+
+global proc loadBookedView(){
+    // go my booked view or last view
+    
+    global string $g_mybmrkview = "_myBookedViewA";
+    $ls_bookedcams = `ls -type cameraView`;
+    // switch to last
+    if (!size($ls_bookedcams))
+        return;
+    $_bookedview = $ls_bookedcams[size($ls_bookedcams)-1];
+    if (`objExists $g_mybmrkview` &&
+            `listConnections -s 0 -d 1 -type camera ($g_mybmrkview+".msg")`)
+        $_bookedview = $g_mybmrkview;
+    cameraView -e -an 0 -c persp -sc $_bookedview;
+    $hmsg = `format -s $_bookedview "Bookmark View: ^1s"`;
+    headsUpMessage -t 4 $hmsg;
+}
